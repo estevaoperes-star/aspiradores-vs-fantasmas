@@ -38,13 +38,33 @@ export const GameScene: React.FC<GameSceneProps> = ({ levelId, onBackToMenu, upg
   const spawnTimerRef = useRef<number>(0);
   const lastEnergyTickRef = useRef<number>(0);
   const requestRef = useRef<number>(0);
+  
+  // --- AUDIO REFS ---
   const audioContextRef = useRef<AudioContext | null>(null);
+  const musicRef = useRef<{ isPlaying: boolean; nextNoteTime: number; step: number; timerId: number | null }>({
+      isPlaying: false, nextNoteTime: 0, step: 0, timerId: null
+  });
 
   // --- INITIALIZATION ---
   useEffect(() => {
     startGame();
-    return () => cancelAnimationFrame(requestRef.current);
+    return () => {
+        cancelAnimationFrame(requestRef.current);
+        stopMusic();
+    };
   }, [levelId]);
+
+  // Controle da Música baseado no estado do jogo
+  useEffect(() => {
+      if (status === 'PLAYING' && !isPaused) {
+          // Tenta iniciar se o contexto já estiver permitido
+          if (audioContextRef.current && audioContextRef.current.state === 'running') {
+              startMusic();
+          }
+      } else {
+          stopMusic();
+      }
+  }, [status, isPaused]);
 
   const startGame = () => {
     setStatus('PLAYING');
@@ -68,6 +88,9 @@ export const GameScene: React.FC<GameSceneProps> = ({ levelId, onBackToMenu, upg
     
     // Start Loop
     requestRef.current = requestAnimationFrame(loop);
+    
+    // Tenta iniciar música
+    initAudio(); 
   };
 
   // --- AUDIO SYSTEM ---
@@ -75,10 +98,137 @@ export const GameScene: React.FC<GameSceneProps> = ({ levelId, onBackToMenu, upg
     if (!audioContextRef.current) {
         audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
     }
+    // Resume se suspenso (necessário interação do usuário)
     if (audioContextRef.current.state === 'suspended') {
-        audioContextRef.current.resume().catch(() => {});
+        audioContextRef.current.resume().then(() => {
+            if (status === 'PLAYING' && !isPaused) startMusic();
+        }).catch(() => {});
     }
     return audioContextRef.current;
+  };
+
+  const startMusic = () => {
+      const ctx = audioContextRef.current;
+      if (!ctx) return;
+      if (musicRef.current.isPlaying) return;
+
+      musicRef.current.isPlaying = true;
+      musicRef.current.step = 0;
+      musicRef.current.nextNoteTime = ctx.currentTime + 0.1;
+      scheduler();
+  };
+
+  const stopMusic = () => {
+      musicRef.current.isPlaying = false;
+      if (musicRef.current.timerId) {
+          window.clearTimeout(musicRef.current.timerId);
+          musicRef.current.timerId = null;
+      }
+  };
+
+  const scheduler = () => {
+      if (!musicRef.current.isPlaying) return;
+      const ctx = audioContextRef.current;
+      if (!ctx) return;
+
+      const scheduleAheadTime = 0.1;
+      const lookahead = 25.0; // ms
+
+      try {
+          while (musicRef.current.nextNoteTime < ctx.currentTime + scheduleAheadTime) {
+              playMusicStep(musicRef.current.step, musicRef.current.nextNoteTime);
+              
+              // BPM: 120 (Standard) ou 140 (Se música especial equipada)
+              const bpm = equippedItems.MUSIC === 10 ? 140 : 120;
+              const secondsPerBeat = 60.0 / bpm;
+              const secondsPer16th = secondsPerBeat / 4;
+              
+              musicRef.current.nextNoteTime += secondsPer16th;
+              musicRef.current.step = (musicRef.current.step + 1) % 64; // Loop 4 bars
+          }
+          musicRef.current.timerId = window.setTimeout(scheduler, lookahead);
+      } catch(e) {
+          console.warn("Audio scheduler error", e);
+          stopMusic();
+      }
+  };
+
+  const playMusicStep = (step: number, time: number) => {
+      const ctx = audioContextRef.current;
+      if (!ctx) return;
+
+      // Se tiver item de música equipado (ID 10), muda o tom para algo mais "Sombrio" (C Minor -> G Minor)
+      const isAltMusic = equippedItems.MUSIC === 10;
+      const rootBase = isAltMusic ? 196.00 : 261.63; // G3 vs C4
+
+      const playTone = (freq: number, type: 'sine'|'square'|'triangle'|'sawtooth', vol: number, dur: number) => {
+          const osc = ctx.createOscillator();
+          const gain = ctx.createGain();
+          osc.type = type;
+          osc.frequency.setValueAtTime(freq, time);
+          osc.connect(gain);
+          gain.connect(ctx.destination);
+          gain.gain.setValueAtTime(0, time);
+          gain.gain.linearRampToValueAtTime(vol, time + 0.01);
+          gain.gain.exponentialRampToValueAtTime(0.001, time + dur);
+          osc.start(time);
+          osc.stop(time + dur + 0.1);
+      };
+
+      // 1. BASSLINE (On 8th notes)
+      if (step % 4 === 0) {
+          // Simple walking bass
+          // Pattern: Root - Root - Fourth - Fifth
+          let freq = rootBase / 2; // Bass octave
+          if (step >= 16 && step < 32) freq *= 1.334; // F (Fourth) ish
+          if (step >= 32 && step < 48) freq *= 1.5;   // G (Fifth) ish
+          
+          playTone(freq, 'triangle', 0.15, 0.2);
+          playTone(freq/2, 'sine', 0.2, 0.2); // Sub bass
+      }
+
+      // 2. DRUMS (Kick & Snare)
+      if (step % 8 === 0) {
+          // Kick
+          playTone(60, 'sine', 0.3, 0.1);
+          const osc = ctx.createOscillator(); // Click for kick
+          const g = ctx.createGain();
+          osc.frequency.setValueAtTime(150, time);
+          osc.frequency.exponentialRampToValueAtTime(0.01, time + 0.1);
+          g.gain.setValueAtTime(0.2, time);
+          g.gain.exponentialRampToValueAtTime(0.001, time + 0.1);
+          osc.connect(g); g.connect(ctx.destination);
+          osc.start(time); osc.stop(time + 0.1);
+      }
+      if (step % 16 === 8) {
+          // Snare (Noise simulation using high tones)
+          playTone(800, 'square', 0.05, 0.05);
+          playTone(1200, 'sawtooth', 0.05, 0.05);
+      }
+      // Hi-hats (16th notes)
+      if (step % 2 === 0) {
+          playTone(4000 + Math.random()*1000, 'square', 0.02, 0.01);
+      }
+
+      // 3. MELODY (Arpeggio style)
+      // C Minor Pentatonic-ish
+      const scale = isAltMusic 
+        ? [196.00, 233.08, 261.63, 293.66, 311.13, 392.00] // G Minor
+        : [261.63, 311.13, 349.23, 392.00, 466.16, 523.25]; // C Minor
+      
+      // Simple Pattern
+      if (step % 2 === 0) {
+          // Procedural melody logic
+          const index = (step / 2) % scale.length;
+          // Randomize octave occasionally
+          const octave = Math.random() > 0.8 ? 2 : 1;
+          
+          // Play only some notes to create rhythm, not constant stream
+          const rhythmMask = [1, 1, 0, 1, 1, 0, 1, 0, 1, 1, 1, 0, 1, 0, 0, 1]; 
+          if (rhythmMask[step % 16]) {
+              playTone(scale[index] * octave, 'sine', 0.1, 0.1);
+          }
+      }
   };
 
   const playSound = (type: 'SHOOT' | 'HIT' | 'BUILD' | 'ERROR' | 'VICTORY' | 'GAME_OVER' | 'SELECT') => {
@@ -375,6 +525,13 @@ export const GameScene: React.FC<GameSceneProps> = ({ levelId, onBackToMenu, upg
   };
 
   const handleGridClick = (r: number, c: number) => {
+      // Inicia audio ao clicar na grid se estiver suspenso
+      if (audioContextRef.current && audioContextRef.current.state === 'suspended') {
+        audioContextRef.current.resume().then(() => {
+             if (status === 'PLAYING' && !isPaused) startMusic();
+        }).catch(() => {});
+      }
+
       if (status !== 'PLAYING' || isPaused) return;
 
       const existingTower = towersRef.current.find(t => t.row === r && t.col === c);
@@ -431,7 +588,7 @@ export const GameScene: React.FC<GameSceneProps> = ({ levelId, onBackToMenu, upg
   };
 
   return (
-    <div className={`w-full h-full relative select-none flex flex-col font-sans overflow-hidden`} style={getBackgroundStyle()} onClick={initAudio}>
+    <div className={`w-full h-full relative select-none flex flex-col font-sans overflow-hidden`} style={getBackgroundStyle()} onClick={() => initAudio()}>
       
       {/* --- HUD HEADER --- */}
       <div className="h-16 flex items-center justify-between px-4 z-30 border-b shrink-0 bg-slate-900/90 border-slate-700 text-white shadow-lg">
