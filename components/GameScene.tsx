@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { CheckCircle, Zap, Heart, RefreshCw, XCircle, Wind, Target, Play, Pause, ArrowLeft, Music, Trash2, ArrowRight } from 'lucide-react';
 import { GameStatus, Ghost as GhostType, Tower, Projectile, Particle, TowerType, GhostType as GhostVariant, UpgradeState, EquippedItems } from '../types';
@@ -779,236 +778,241 @@ export const GameScene: React.FC<GameSceneProps> = ({ levelId, onBackToMenu, upg
 
   // --- SYNCHRONOUS GAME LOOP ---
   const loop = useCallback((time: number) => {
-    if (status !== 'PLAYING') return;
+    try {
+        if (status !== 'PLAYING') return;
 
-    if (isPaused) {
+        if (isPaused) {
+            lastTimeRef.current = time;
+            requestRef.current = requestAnimationFrame(loop);
+            return;
+        }
+
+        if (lastTimeRef.current === 0) lastTimeRef.current = time;
+        const deltaTime = time - lastTimeRef.current;
         lastTimeRef.current = time;
-        requestRef.current = requestAnimationFrame(loop);
-        return;
-    }
+        const dt = deltaTime / 16; 
 
-    if (lastTimeRef.current === 0) lastTimeRef.current = time;
-    const deltaTime = time - lastTimeRef.current;
-    lastTimeRef.current = time;
-    const dt = deltaTime / 16; 
+        // Local Variables for Next Frame (Synchronous Logic)
+        let nextGhosts = [...ghosts];
+        let nextProjectiles = [...projectiles];
+        let nextTowers = [...towers];
+        let nextParticles = [...particles];
+        let currentEnergy = energy;
+        let currentLives = lives;
+        let currentKills = ghostsDefeated;
+        let victoryTrigger = false;
+        let defeatTrigger = false;
 
-    // Local Variables for Next Frame (Synchronous Logic)
-    let nextGhosts = [...ghosts];
-    let nextProjectiles = [...projectiles];
-    let nextTowers = [...towers];
-    let nextParticles = [...particles];
-    let currentEnergy = energy;
-    let currentLives = lives;
-    let currentKills = ghostsDefeated;
-    let victoryTrigger = false;
-    let defeatTrigger = false;
+        // 1. Spawning
+        spawnTimerRef.current += deltaTime;
+        if (spawnTimerRef.current > Constants.GHOST_SPAWN_RATE_MS) {
+            if (ghostsSpawnedCountRef.current < Constants.TOTAL_GHOSTS_TO_WIN) {
+                const row = Math.floor(Math.random() * Constants.GRID_ROWS);
+                let type: GhostVariant = 'TRAVESSO';
+                const progress = ghostsSpawnedCountRef.current;
+                if (progress > 15) type = Math.random() > 0.5 ? 'POEIRA' : 'SONOLENTO';
+                else if (progress > 10) type = Math.random() > 0.5 ? 'SONOLENTO' : 'MEDROSO';
+                else if (progress > 5) type = Math.random() > 0.6 ? 'MEDROSO' : 'TRAVESSO';
 
-    // 1. Spawning
-    spawnTimerRef.current += deltaTime;
-    if (spawnTimerRef.current > Constants.GHOST_SPAWN_RATE_MS) {
-        if (ghostsSpawnedCountRef.current < Constants.TOTAL_GHOSTS_TO_WIN) {
-            const row = Math.floor(Math.random() * Constants.GRID_ROWS);
-            let type: GhostVariant = 'TRAVESSO';
-            const progress = ghostsSpawnedCountRef.current;
-            if (progress > 15) type = Math.random() > 0.5 ? 'POEIRA' : 'SONOLENTO';
-            else if (progress > 10) type = Math.random() > 0.5 ? 'SONOLENTO' : 'MEDROSO';
-            else if (progress > 5) type = Math.random() > 0.6 ? 'MEDROSO' : 'TRAVESSO';
+                nextGhosts.push(createGhost(row, type));
+                ghostsSpawnedCountRef.current++;
 
-            nextGhosts.push(createGhost(row, type));
-            ghostsSpawnedCountRef.current++;
-
-            // SOUND: Spawn Sound based on Type (Random chance to not spam)
-            if (Math.random() > 0.7) {
-                if (type === 'TRAVESSO') playSound('GHOST_WOBBLE');
-                else if (type === 'SONOLENTO') playSound('GHOST_SNORE');
-            }
-        }
-        spawnTimerRef.current = 0;
-    }
-
-    // 2. Energy
-    energyTimerRef.current += deltaTime;
-    if (energyTimerRef.current > Constants.PASSIVE_ENERGY_TICK_MS) {
-        currentEnergy += Constants.PASSIVE_ENERGY_AMOUNT;
-        energyTimerRef.current = 0;
-    }
-
-    // 3. Tower Action
-    const now = time;
-    for (const tower of nextTowers) {
-        const config = Constants.getTowerStats(tower.type, tower.level);
-        
-        // Robot Movement
-        if (tower.type === 'ROBOT') {
-            tower.offset += config.speed * dt;
-        } 
-        // Energy Generation
-        else if (tower.type === 'ENERGY') {
-            if (now - tower.lastActionTime >= config.cooldown) {
-                currentEnergy += config.production;
-                tower.lastActionTime = now;
-                const tX = (tower.col * Constants.CELL_WIDTH_PERCENT) + (Constants.CELL_WIDTH_PERCENT/2);
-                nextParticles.push({ id: Math.random().toString(), x: tX, y: (tower.row * 20 + 10), color: '#a3e635', life: 1.0, type: 'RING' });
-                
-                playSound('ENERGY_SPAWN'); // Som de Magia
-            }
-        } 
-        // Shooting
-        else {
-            if (now - tower.lastActionTime >= config.cooldown) {
-                const rangePercent = config.rangeInCells * Constants.CELL_WIDTH_PERCENT;
-                const towerX = (tower.col * Constants.CELL_WIDTH_PERCENT) + (Constants.CELL_WIDTH_PERCENT/2);
-                
-                const hasTarget = nextGhosts.some(g => g.row === tower.row && g.x > towerX && g.x < towerX + rangePercent);
-
-                if (hasTarget) {
-                    let pType: 'PLASMA' | 'WIND' | 'BEAM' = 'PLASMA';
-                    if (tower.type === 'TURBO') pType = 'WIND';
-                    if (tower.type === 'MEGA') pType = 'BEAM';
-                    
-                    const startX = towerX + (tower.offset || 0);
-                    nextProjectiles.push({
-                         id: Math.random().toString(36).substr(2, 9),
-                         type: pType, row: tower.row, x: startX,
-                         speed: pType === 'BEAM' ? 1.5 : (pType === 'WIND' ? 0.6 : 0.5),
-                         damage: config.damage, knockback: config.knockback || 0
-                    });
-
-                    // Som de Ataque baseado no tipo
-                    if (tower.type === 'BASIC') playSound('BASIC_ATK');
-                    else if (tower.type === 'TURBO') playSound('TURBO_ATK');
-                    else if (tower.type === 'MEGA') playSound('MEGA');
-
-                    tower.lastActionTime = now;
+                // SOUND: Spawn Sound based on Type (Random chance to not spam)
+                if (Math.random() > 0.7) {
+                    if (type === 'TRAVESSO') playSound('GHOST_WOBBLE');
+                    else if (type === 'SONOLENTO') playSound('GHOST_SNORE');
                 }
             }
-        }
-    }
-
-    // 4. Projectile Movement & Collision (DESTRUCTION LOGIC)
-    for (let i = nextProjectiles.length - 1; i >= 0; i--) {
-        const proj = nextProjectiles[i];
-        proj.x += proj.speed * dt;
-        
-        let hit = false;
-        // Check collision against ghosts
-        for (let j = nextGhosts.length - 1; j >= 0; j--) {
-            const g = nextGhosts[j];
-            if (g.row === proj.row) {
-                const dist = Math.abs(g.x - proj.x);
-                if (dist < (Constants.GHOST_HITBOX_W/2 + Constants.PROJECTILE_HITBOX_W/2)) {
-                    // HIT!
-                    g.hp -= proj.damage;
-                    g.x += proj.knockback || 0;
-                    hit = true;
-                    
-                    // VFX
-                    let pColor = '#FFFFFF';
-                    if (proj.type === 'WIND') pColor = '#CBD5E1';
-                    if (proj.type === 'BEAM') pColor = '#A855F7';
-                    nextParticles.push(...createParticlesBatch(g.row, g.x, pColor, 3));
-                    
-                    // SOUND: Specific Hit Sound by Ghost Type (Throttled random)
-                    if (Math.random() > 0.5) {
-                        if (g.type === 'TRAVESSO') playSound('GHOST_BOO');
-                        else if (g.type === 'MEDROSO') playSound('GHOST_EEP');
-                        else if (g.type === 'SONOLENTO') playSound('GHOST_SNORE');
-                        else if (g.type === 'POEIRA') playSound('GHOST_POOF_HIT');
-                    }
-                    
-                    break; // Stop checking ghosts for this projectile
-                }
-            }
+            spawnTimerRef.current = 0;
         }
 
-        // Remove projectile if it hit something OR went off screen
-        if (hit || proj.x > 105) {
-            nextProjectiles.splice(i, 1);
-        }
-    }
-
-    // 5. Ghost Movement & Cleanup
-    for (let i = nextGhosts.length - 1; i >= 0; i--) {
-        const ghost = nextGhosts[i];
-        let moveSpeed = ghost.speed * dt;
-
-        // Robot Collision
-        for (const t of nextTowers) {
-             if (t.type === 'ROBOT' && t.row === ghost.row) {
-                 const robotConfig = Constants.getTowerStats(t.type, t.level);
-                 const robotX = (t.col * Constants.CELL_WIDTH_PERCENT) + t.offset;
-                 if (Math.abs(ghost.x - robotX) < Constants.ROBOT_HITBOX_W) {
-                     ghost.hp -= robotConfig.damage * dt;
-                     t.hp -= 0.05 * dt;
-                     ghost.x += Constants.ROBOT_PUSH_FORCE * dt;
-                     moveSpeed = 0;
-
-                     // Som de colisão do robô (chance de 5% por frame para não saturar)
-                     if (Math.random() < 0.05) playSound('ROBOT_HIT');
-                 }
-             }
+        // 2. Energy
+        energyTimerRef.current += deltaTime;
+        if (energyTimerRef.current > Constants.PASSIVE_ENERGY_TICK_MS) {
+            currentEnergy += Constants.PASSIVE_ENERGY_AMOUNT;
+            energyTimerRef.current = 0;
         }
 
-        ghost.x -= moveSpeed;
-
-        if (ghost.hp <= 0) {
-            currentEnergy += Constants.ENERGY_PER_KILL;
-            currentKills++;
-            nextParticles.push(...createParticlesBatch(ghost.row, ghost.x, getParticleColorForGhost(), 8));
+        // 3. Tower Action
+        const now = time;
+        for (const tower of nextTowers) {
+            const config = Constants.getTowerStats(tower.type, tower.level);
             
-            // SOUND: Death Sound based on type
-            if (ghost.type === 'TRAVESSO') playSound('DEATH_TRAVESSO');
-            else if (ghost.type === 'MEDROSO') playSound('DEATH_MEDROSO');
-            else if (ghost.type === 'SONOLENTO') playSound('DEATH_SONOLENTO');
-            else if (ghost.type === 'POEIRA') playSound('DEATH_POEIRA');
+            // Robot Movement
+            if (tower.type === 'ROBOT') {
+                tower.offset += config.speed * dt;
+            } 
+            // Energy Generation
+            else if (tower.type === 'ENERGY') {
+                if (now - tower.lastActionTime >= config.cooldown) {
+                    currentEnergy += config.production;
+                    tower.lastActionTime = now;
+                    const tX = (tower.col * Constants.CELL_WIDTH_PERCENT) + (Constants.CELL_WIDTH_PERCENT/2);
+                    nextParticles.push({ id: Math.random().toString(), x: tX, y: (tower.row * 20 + 10), color: '#a3e635', life: 1.0, type: 'RING' });
+                    
+                    playSound('ENERGY_SPAWN'); // Som de Magia
+                }
+            } 
+            // Shooting
+            else {
+                if (now - tower.lastActionTime >= config.cooldown) {
+                    const rangePercent = config.rangeInCells * Constants.CELL_WIDTH_PERCENT;
+                    const towerX = (tower.col * Constants.CELL_WIDTH_PERCENT) + (Constants.CELL_WIDTH_PERCENT/2);
+                    
+                    const hasTarget = nextGhosts.some(g => g.row === tower.row && g.x > towerX && g.x < towerX + rangePercent);
 
-            nextGhosts.splice(i, 1);
-        } else if (ghost.x <= 0) {
-            currentLives--;
-            if (currentLives <= 0) defeatTrigger = true;
-            nextParticles.push(...createParticlesBatch(ghost.row, 0, '#EF4444', 10));
-            // SOUND: Lose Life (Generic Error/Bad Sound)
-            playSound('ERROR');
-            nextGhosts.splice(i, 1);
-        }
-    }
+                    if (hasTarget) {
+                        let pType: 'PLASMA' | 'WIND' | 'BEAM' = 'PLASMA';
+                        if (tower.type === 'TURBO') pType = 'WIND';
+                        if (tower.type === 'MEGA') pType = 'BEAM';
+                        
+                        const startX = towerX + (tower.offset || 0);
+                        nextProjectiles.push({
+                            id: Math.random().toString(36).substr(2, 9),
+                            type: pType, row: tower.row, x: startX,
+                            speed: pType === 'BEAM' ? 1.5 : (pType === 'WIND' ? 0.6 : 0.5),
+                            damage: config.damage, knockback: config.knockback || 0
+                        });
 
-    // 6. Cleanup Towers (Dead Robots/Offscreen Robots)
-    nextTowers = nextTowers.filter(t => {
-        if (t.type === 'ROBOT') {
-            const currentX = (t.col * Constants.CELL_WIDTH_PERCENT) + t.offset;
-            // Se um robô morrer e estiver selecionado, limpa a seleção
-            if ((t.hp <= 0 || currentX > 100) && t.id === selectedTowerId) {
-                // Warning: state update in loop needs care, but here we can just let it persist until next render
+                        // Som de Ataque baseado no tipo
+                        if (tower.type === 'BASIC') playSound('BASIC_ATK');
+                        else if (tower.type === 'TURBO') playSound('TURBO_ATK');
+                        else if (tower.type === 'MEGA') playSound('MEGA');
+
+                        tower.lastActionTime = now;
+                    }
+                }
             }
-            return t.hp > 0 && currentX <= 100;
         }
-        return true;
-    });
 
-    // 7. Particles
-    nextParticles = nextParticles.map(p => ({
-        ...p, life: p.life - 0.05, x: p.x + (p.vx || 0), y: p.y + (p.vy || 0)
-    })).filter(p => p.life > 0);
+        // 4. Projectile Movement & Collision (DESTRUCTION LOGIC)
+        for (let i = nextProjectiles.length - 1; i >= 0; i--) {
+            const proj = nextProjectiles[i];
+            proj.x += proj.speed * dt;
+            
+            let hit = false;
+            // Check collision against ghosts
+            for (let j = nextGhosts.length - 1; j >= 0; j--) {
+                const g = nextGhosts[j];
+                if (g.row === proj.row) {
+                    const dist = Math.abs(g.x - proj.x);
+                    if (dist < (Constants.GHOST_HITBOX_W/2 + Constants.PROJECTILE_HITBOX_W/2)) {
+                        // HIT!
+                        g.hp -= proj.damage;
+                        g.x += proj.knockback || 0;
+                        hit = true;
+                        
+                        // VFX
+                        let pColor = '#FFFFFF';
+                        if (proj.type === 'WIND') pColor = '#CBD5E1';
+                        if (proj.type === 'BEAM') pColor = '#A855F7';
+                        nextParticles.push(...createParticlesBatch(g.row, g.x, pColor, 3));
+                        
+                        // SOUND: Specific Hit Sound by Ghost Type (Throttled random)
+                        if (Math.random() > 0.5) {
+                            if (g.type === 'TRAVESSO') playSound('GHOST_BOO');
+                            else if (g.type === 'MEDROSO') playSound('GHOST_EEP');
+                            else if (g.type === 'SONOLENTO') playSound('GHOST_SNORE');
+                            else if (g.type === 'POEIRA') playSound('GHOST_POOF_HIT');
+                        }
+                        
+                        break; // Stop checking ghosts for this projectile
+                    }
+                }
+            }
 
-    // 8. Victory Check
-    if (nextGhosts.length === 0 && ghostsSpawnedCountRef.current >= Constants.TOTAL_GHOSTS_TO_WIN) {
-        victoryTrigger = true;
+            // Remove projectile if it hit something OR went off screen
+            if (hit || proj.x > 105) {
+                nextProjectiles.splice(i, 1);
+            }
+        }
+
+        // 5. Ghost Movement & Cleanup
+        for (let i = nextGhosts.length - 1; i >= 0; i--) {
+            const ghost = nextGhosts[i];
+            let moveSpeed = ghost.speed * dt;
+
+            // Robot Collision
+            for (const t of nextTowers) {
+                if (t.type === 'ROBOT' && t.row === ghost.row) {
+                    const robotConfig = Constants.getTowerStats(t.type, t.level);
+                    const robotX = (t.col * Constants.CELL_WIDTH_PERCENT) + t.offset;
+                    if (Math.abs(ghost.x - robotX) < Constants.ROBOT_HITBOX_W) {
+                        ghost.hp -= robotConfig.damage * dt;
+                        t.hp -= 0.05 * dt;
+                        ghost.x += Constants.ROBOT_PUSH_FORCE * dt;
+                        moveSpeed = 0;
+
+                        // Som de colisão do robô (chance de 5% por frame para não saturar)
+                        if (Math.random() < 0.05) playSound('ROBOT_HIT');
+                    }
+                }
+            }
+
+            ghost.x -= moveSpeed;
+
+            if (ghost.hp <= 0) {
+                currentEnergy += Constants.ENERGY_PER_KILL;
+                currentKills++;
+                nextParticles.push(...createParticlesBatch(ghost.row, ghost.x, getParticleColorForGhost(), 8));
+                
+                // SOUND: Death Sound based on type
+                if (ghost.type === 'TRAVESSO') playSound('DEATH_TRAVESSO');
+                else if (ghost.type === 'MEDROSO') playSound('DEATH_MEDROSO');
+                else if (ghost.type === 'SONOLENTO') playSound('DEATH_SONOLENTO');
+                else if (ghost.type === 'POEIRA') playSound('DEATH_POEIRA');
+
+                nextGhosts.splice(i, 1);
+            } else if (ghost.x <= 0) {
+                currentLives--;
+                if (currentLives <= 0) defeatTrigger = true;
+                nextParticles.push(...createParticlesBatch(ghost.row, 0, '#EF4444', 10));
+                // SOUND: Lose Life (Generic Error/Bad Sound)
+                playSound('ERROR');
+                nextGhosts.splice(i, 1);
+            }
+        }
+
+        // 6. Cleanup Towers (Dead Robots/Offscreen Robots)
+        nextTowers = nextTowers.filter(t => {
+            if (t.type === 'ROBOT') {
+                const currentX = (t.col * Constants.CELL_WIDTH_PERCENT) + t.offset;
+                // Se um robô morrer e estiver selecionado, limpa a seleção
+                if ((t.hp <= 0 || currentX > 100) && t.id === selectedTowerId) {
+                    // Warning: state update in loop needs care, but here we can just let it persist until next render
+                }
+                return t.hp > 0 && currentX <= 100;
+            }
+            return true;
+        });
+
+        // 7. Particles
+        nextParticles = nextParticles.map(p => ({
+            ...p, life: p.life - 0.05, x: p.x + (p.vx || 0), y: p.y + (p.vy || 0)
+        })).filter(p => p.life > 0);
+
+        // 8. Victory Check
+        if (nextGhosts.length === 0 && ghostsSpawnedCountRef.current >= Constants.TOTAL_GHOSTS_TO_WIN) {
+            victoryTrigger = true;
+        }
+
+        // --- APPLY STATE ---
+        setGhosts(nextGhosts);
+        setProjectiles(nextProjectiles);
+        setTowers(nextTowers);
+        setParticles(nextParticles);
+        setEnergy(currentEnergy);
+        setLives(currentLives);
+        setGhostsDefeated(currentKills);
+
+        if (victoryTrigger) setStatus('VICTORY');
+        if (defeatTrigger) setStatus('DEFEAT');
+
+        requestRef.current = requestAnimationFrame(loop);
+    } catch (e) {
+        console.error("Game Loop Crash:", e);
+        // Não rethrow para não matar o React, apenas para o loop ou tenta recuperar
     }
-
-    // --- APPLY STATE ---
-    setGhosts(nextGhosts);
-    setProjectiles(nextProjectiles);
-    setTowers(nextTowers);
-    setParticles(nextParticles);
-    setEnergy(currentEnergy);
-    setLives(currentLives);
-    setGhostsDefeated(currentKills);
-
-    if (victoryTrigger) setStatus('VICTORY');
-    if (defeatTrigger) setStatus('DEFEAT');
-
-    requestRef.current = requestAnimationFrame(loop);
   }, [status, isPaused, ghosts, projectiles, towers, particles, energy, lives, ghostsDefeated, equippedItems, upgradeLevels, onLevelComplete, selectedTowerId, isRemoving]); 
 
   useEffect(() => {

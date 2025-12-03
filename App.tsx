@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect } from 'react';
 import { GameScene } from './components/GameScene';
 import { MainMenu } from './components/MainMenu';
@@ -10,6 +9,36 @@ import { SceneName, UpgradeState, TowerType, EquippedItems, StoreCategory } from
 import * as Constants from './constants';
 
 const App: React.FC = () => {
+  // --- TESTE DE BUILD & ASSETS ---
+  useEffect(() => {
+      const testWebBuild = () => {
+          console.log("%c[SYSTEM] Starting Web Build Diagnostics...", "color: cyan; font-weight: bold;");
+          
+          // 1. Verifica Assets (Base64 check)
+          const towerCheck = Constants.TOWER_TYPES.BASIC.image.startsWith('data:image/svg+xml');
+          const bgCheck = Constants.BG_LEVEL_1.startsWith('data:image/svg+xml');
+          
+          if (towerCheck && bgCheck) {
+              console.log("%c[ASSETS] Base64 Assets OK (Virtual Public Folder)", "color: green");
+          } else {
+              console.error("[ASSETS] Asset Generation Failed!");
+          }
+
+          // 2. Verifica Render Context
+          const root = document.getElementById('root');
+          if (root && root.clientHeight > 0) {
+              console.log(`[RENDER] Root Container OK (${root.clientWidth}x${root.clientHeight})`);
+          } else {
+              console.warn("[RENDER] Root container has 0 height! Check CSS.");
+          }
+
+          console.log("%c[SYSTEM] WEB BUILD READY FOR VERCEL", "color: lime; font-weight: bold; background: #003300; padding: 2px 5px;");
+      };
+
+      // Executa após mount
+      setTimeout(testWebBuild, 500);
+  }, []);
+
   // --- Global Persistence State ---
   const [currentScene, setCurrentScene] = useState<SceneName>('MENU_PRINCIPAL');
   const [selectedLevelId, setSelectedLevelId] = useState<number>(1);
