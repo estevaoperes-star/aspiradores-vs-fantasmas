@@ -25,7 +25,7 @@ class ErrorBoundary extends Component<Props, State> {
   componentDidCatch(error: Error, errorInfo: ErrorInfo) {
     console.error("React Error Boundary caught:", error, errorInfo);
     
-    // Reportar ao Painel de Debug
+    // Reportar ao Painel de Debug Visual
     if (window.reportBootStep) {
         window.reportBootStep("CRASH: " + error.message.substring(0, 25), "ERROR");
     }
@@ -85,9 +85,3 @@ root.render(
 
 // 2. Checkpoint Post-Render (Sync)
 if(window.reportBootStep) window.reportBootStep('ReactDOM Render Triggered', 'OK');
-
-// Backup para sinalização imediata
-requestAnimationFrame(() => {
-    // Isso roda no próximo frame, indicando que o script principal terminou
-    if(window.reportBootStep) window.reportBootStep('Main Script Done', 'OK');
-});

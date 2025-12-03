@@ -11,7 +11,7 @@ import * as Constants from './constants';
 // Interface global para o Debug
 declare global {
     interface Window {
-        DEBUG_BOOT: boolean;
+        DEBUG_VISUAL: boolean;
         reportBootStep: (step: string, status: 'PENDING' | 'OK' | 'ERROR') => void;
         finishLoading: () => void;
     }
@@ -22,7 +22,7 @@ const App: React.FC = () => {
   const [currentScene, setCurrentScene] = useState<SceneName>('MENU_PRINCIPAL');
   const [selectedLevelId, setSelectedLevelId] = useState<number>(1);
   
-  // Safe Initializers
+  // Safe Initializers (Local Storage pode falhar em iframes/privacidade restrita)
   const [stars, setStars] = useState<number>(() => safeIntInit('avf_stars', 100));
   const [poeiraCoins, setPoeiraCoins] = useState<number>(() => safeIntInit('avf_poeiracoins', 0));
   const [ownedItems, setOwnedItems] = useState<number[]>(() => safeJsonInit('avf_owned_items', []));
@@ -32,57 +32,60 @@ const App: React.FC = () => {
     try {
         const saved = localStorage.getItem('avf_equipped_items');
         if (saved) return JSON.parse(saved);
-    } catch (e) { console.warn(e); }
+    } catch (e) { }
     return { SKINS: null, EFEITOS: null, MUSIC: null, BACKGROUND: null, CURSOR: null };
   });
 
   // ======================================================
-  // FUNÇÃO DE BOOT UNIFICADA
+  // 3) FUNÇÃO ÚNICA DE INICIALIZAÇÃO
   // ======================================================
   const startAspiradoresVsFantasmas = async () => {
     try {
-        if(window.reportBootStep) window.reportBootStep('App Component Mount', 'OK');
-        console.log("[BOOT] Iniciando startAspiradoresVsFantasmas...");
+        if(window.reportBootStep) window.reportBootStep('React App Mount', 'OK');
 
-        // 1. Validar Constantes Críticas (Assets)
-        if(window.reportBootStep) window.reportBootStep('Asset Integrity Check', 'PENDING');
+        // ETAPA 1: Assets e Constantes
+        if(window.reportBootStep) window.reportBootStep('Load Basic Assets', 'PENDING');
         if (!Constants.TOWER_TYPES || !Constants.LEVELS) {
-            throw new Error("Constantes do jogo falharam ao carregar.");
+             throw new Error("Assets Críticos Ausentes");
         }
-        if(window.reportBootStep) window.reportBootStep('Asset Integrity Check', 'OK');
+        // Simular um micro-delay para permitir UI update (opcional, mas bom para debug visual)
+        await new Promise(r => setTimeout(r, 50));
+        if(window.reportBootStep) window.reportBootStep('Load Basic Assets', 'OK');
 
-        // 2. Pré-carregar algo se necessário (Síncrono/Rápido)
-        if(window.reportBootStep) window.reportBootStep('Scene Setup', 'OK');
+        // ETAPA 2: Configurar HUD / Grid (Estado Inicial)
+        if(window.reportBootStep) window.reportBootStep('Setup Grid & HUD', 'PENDING');
+        // A lógica de estado já rodou nos hooks useState acima
+        if(window.reportBootStep) window.reportBootStep('Setup Grid & HUD', 'OK');
 
-        // 3. NÃO esperar rede. Remover loader IMEDIATAMENTE.
-        // O jogo deve abrir mesmo que backend/api falhem (se existissem).
+        // ETAPA 3: Menu Principal (Scene 'MENU_PRINCIPAL' é default)
+        if(window.reportBootStep) window.reportBootStep('Init Main Menu', 'OK');
+
+        // ETAPA 4: Finalização
+        if(window.reportBootStep) window.reportBootStep('Boot Sequence', 'OK');
         
-        console.log("[BOOT] Cena inicial pronta, removendo loading.");
-        if(window.reportBootStep) window.reportBootStep('Boot Sequence Finished', 'OK');
-        
-        // Chamada final para liberar a tela
+        // Remover Overlay
         if (window.finishLoading) window.finishLoading();
 
     } catch (e: any) {
-        console.error("[BOOT] Erro Fatal no Boot:", e);
-        if(window.reportBootStep) window.reportBootStep('Boot Exception: ' + e.message, 'ERROR');
+        console.error("Boot Error:", e);
+        if(window.reportBootStep) window.reportBootStep('Boot Exception', 'ERROR');
         
-        // Mesmo com erro, tentamos mostrar a interface para o ErrorBoundary capturar
+        // Tentar recuperar mesmo com erro
         if (window.finishLoading) window.finishLoading();
     }
   };
 
   useEffect(() => {
-      // Inicia o processo assim que o componente monta
+      // Inicia imediatamente ao montar
       startAspiradoresVsFantasmas();
   }, []);
 
   // --- Effects de Persistência ---
-  useEffect(() => { localStorage.setItem('avf_stars', stars.toString()); }, [stars]);
-  useEffect(() => { localStorage.setItem('avf_poeiracoins', poeiraCoins.toString()); }, [poeiraCoins]);
-  useEffect(() => { localStorage.setItem('avf_owned_items', JSON.stringify(ownedItems)); }, [ownedItems]);
-  useEffect(() => { localStorage.setItem('avf_equipped_items', JSON.stringify(equippedItems)); }, [equippedItems]);
-  useEffect(() => { localStorage.setItem('avf_upgrades', JSON.stringify(upgradeLevels)); }, [upgradeLevels]);
+  useEffect(() => { safeSetItem('avf_stars', stars.toString()); }, [stars]);
+  useEffect(() => { safeSetItem('avf_poeiracoins', poeiraCoins.toString()); }, [poeiraCoins]);
+  useEffect(() => { safeSetItem('avf_owned_items', JSON.stringify(ownedItems)); }, [ownedItems]);
+  useEffect(() => { safeSetItem('avf_equipped_items', JSON.stringify(equippedItems)); }, [equippedItems]);
+  useEffect(() => { safeSetItem('avf_upgrades', JSON.stringify(upgradeLevels)); }, [upgradeLevels]);
 
   // Integridade do Equipamento
   useEffect(() => {
@@ -242,7 +245,7 @@ const App: React.FC = () => {
   );
 };
 
-// --- Helpers de Inicialização Segura ---
+// --- Helpers de Inicialização Segura (Try/Catch para evitar crash se LocalStorage estiver bloqueado) ---
 function safeIntInit(key: string, defaultVal: number): number {
     try {
         const item = localStorage.getItem(key);
@@ -255,6 +258,10 @@ function safeJsonInit(key: string, defaultVal: any): any {
         const item = localStorage.getItem(key);
         return item ? JSON.parse(item) : defaultVal;
     } catch { return defaultVal; }
+}
+
+function safeSetItem(key: string, value: string) {
+    try { localStorage.setItem(key, value); } catch(e) {}
 }
 
 export default App;

@@ -6,7 +6,7 @@
     <title>Aspiradores vs Fantasmas</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
-      /* CRITICAL CSS - Carregado antes de tudo */
+      /* RESET & CRITICAL CSS */
       html, body {
         width: 100%;
         height: 100%;
@@ -21,15 +21,11 @@
         width: 100%;
         height: 100%;
         position: absolute;
-        top: 0;
-        left: 0;
+        top: 0; left: 0;
         z-index: 1;
-        display: flex;
-        justify-content: center;
-        align-items: center;
       }
       
-      /* OVERLAY DE LOADING */
+      /* --- OVERLAY DE LOADING --- */
       #loading-overlay {
         position: fixed;
         top: 0; left: 0; right: 0; bottom: 0;
@@ -43,199 +39,190 @@
         transition: opacity 0.5s ease;
       }
       .spinner {
-        width: 50px;
-        height: 50px;
-        border: 4px solid rgba(255,255,255,0.1);
+        width: 60px; height: 60px;
+        border: 6px solid rgba(255,255,255,0.1);
         border-radius: 50%;
         border-top-color: #3b82f6;
         animation: spin 1s ease-in-out infinite;
         margin-bottom: 24px;
       }
       @keyframes spin { to { transform: rotate(360deg); } }
-      
-      .loading-title {
-          font-size: 24px;
-          font-weight: 800;
-          margin-bottom: 8px;
-          text-transform: uppercase;
-          letter-spacing: 1px;
-      }
-      .loading-text {
-          font-size: 14px;
-          color: #94a3b8;
-          font-family: monospace;
-      }
+      .loading-title { font-size: 24px; font-weight: 800; margin-bottom: 8px; text-transform: uppercase; letter-spacing: 1px; }
+      .loading-text { font-size: 14px; color: #94a3b8; font-family: monospace; }
 
-      /* PAINEL DE DEBUG (DEBUG_BOOT = true) */
-      #debug-panel {
+      /* --- PAINEL DE DEBUG VISUAL (On-Screen) --- */
+      #visual-debug-panel {
         display: none; /* Controlado via JS */
         position: fixed;
-        bottom: 10px;
-        right: 10px;
-        width: 320px;
-        background: rgba(0, 0, 0, 0.9);
-        color: #00ff00;
-        padding: 12px;
-        border-radius: 8px;
-        border: 1px solid #333;
+        bottom: 20px;
+        left: 20px;
+        width: 350px;
+        background: rgba(0, 0, 0, 0.95);
+        border: 2px solid #333;
+        border-radius: 12px;
+        padding: 16px;
+        color: #fff;
         font-family: 'Consolas', monospace;
-        font-size: 11px;
+        font-size: 12px;
         z-index: 10000;
-        pointer-events: none;
-        box-shadow: 0 0 20px rgba(0,0,0,0.5);
+        box-shadow: 0 10px 25px rgba(0,0,0,0.5);
       }
-      .debug-header {
-          border-bottom: 1px solid #333;
-          margin-bottom: 8px;
-          padding-bottom: 4px;
+      #visual-debug-panel h3 {
+          margin: 0 0 10px 0;
+          padding-bottom: 8px;
+          border-bottom: 1px solid #444;
+          color: #facc15;
           font-weight: bold;
-          color: #fff;
+          font-size: 14px;
           display: flex;
           justify-content: space-between;
       }
-      .debug-step { margin-bottom: 4px; display: flex; justify-content: space-between; }
-      .debug-step.ok { color: #4ade80; }
-      .debug-step.pending { color: #facc15; }
-      .debug-step.error { color: #f87171; font-weight: bold; }
-      
-      /* Botão de Emergência */
-      #force-start-btn {
-          display: none;
-          margin-top: 30px;
-          padding: 12px 24px;
-          background-color: #ef4444;
+      .debug-row {
+          display: flex;
+          justify-content: space-between;
+          margin-bottom: 6px;
+          padding: 2px 0;
+      }
+      .status-badge {
+          font-weight: bold;
+          padding: 2px 6px;
+          border-radius: 4px;
+          min-width: 60px;
+          text-align: center;
+      }
+      .status-pending { background: #334155; color: #94a3b8; }
+      .status-ok { background: #166534; color: #4ade80; }
+      .status-error { background: #991b1b; color: #fecaca; }
+
+      /* Botão Force Start dentro do painel */
+      #debug-force-btn {
+          margin-top: 15px;
+          width: 100%;
+          padding: 10px;
+          background: #2563eb;
           color: white;
-          border: 2px solid #f87171;
-          border-radius: 8px;
+          border: none;
+          border-radius: 6px;
           font-weight: bold;
           cursor: pointer;
-          font-size: 14px;
           text-transform: uppercase;
-          box-shadow: 0 4px 10px rgba(220, 38, 38, 0.3);
-          animation: pulse 2s infinite;
-          z-index: 10001;
       }
-      @keyframes pulse { 0% { transform: scale(1); } 50% { transform: scale(1.05); } 100% { transform: scale(1); } }
+      #debug-force-btn:hover { background: #1d4ed8; }
     </style>
     <script>
       // ======================================================
-      // 1) CONFIGURAÇÃO DE DEBUG
+      // 1) CONFIGURAÇÃO GLOBAL
       // ======================================================
-      window.DEBUG_BOOT = true; // <--- FLAG GLOBAL DE DEBUG
+      window.DEBUG_VISUAL = true; // ATIVADO PARA DIAGNÓSTICO
       window.gameIsReady = false;
 
-      // Utilitário de Log Seguro
-      function bootLog(msg, type = 'info') {
-        if (!window.DEBUG_BOOT) return;
-        const prefix = "[BOOT DEBUG]";
-        const timestamp = new Date().toISOString().split('T')[1].slice(0, -1);
-        const fullMsg = `${prefix} [${timestamp}] ${msg}`;
-        
-        if (type === 'error') console.error(fullMsg);
-        else console.log(fullMsg);
-      }
-
-      // Atualiza o painel visual
+      // ======================================================
+      // 2) SISTEMA DE LOG VISUAL
+      // ======================================================
       window.reportBootStep = function(stepName, status) {
-        if (!window.DEBUG_BOOT) return;
-        
-        const panel = document.getElementById('debug-panel');
-        if (panel) {
-            panel.style.display = 'block';
-            let line = document.getElementById('step-' + stepName.replace(/\s+/g, '-'));
-            
-            if (!line) {
-                line = document.createElement('div');
-                line.id = 'step-' + stepName.replace(/\s+/g, '-');
-                line.className = 'debug-step';
-                document.getElementById('debug-content').appendChild(line);
-            }
-            
-            let icon = status === 'OK' ? 'OK' : (status === 'ERROR' ? 'ERR' : '...');
-            line.innerHTML = `<span>${stepName}</span> <span>[${icon}]</span>`;
-            line.className = `debug-step ${status.toLowerCase()}`;
-        }
-        bootLog(`${stepName}: ${status}`, status === 'ERROR' ? 'error' : 'info');
+          if (!window.DEBUG_VISUAL) return;
+
+          const panel = document.getElementById('visual-debug-panel');
+          const list = document.getElementById('debug-steps-list');
+          
+          if (panel && list) {
+              panel.style.display = 'block';
+              
+              // Verifica se já existe a linha
+              const rowId = 'row-' + stepName.replace(/[^a-zA-Z0-9]/g, '');
+              let row = document.getElementById(rowId);
+              
+              if (!row) {
+                  row = document.createElement('div');
+                  row.id = rowId;
+                  row.className = 'debug-row';
+                  row.innerHTML = `<span class="step-name">${stepName}</span> <span class="status-badge status-pending">PENDENTE</span>`;
+                  list.appendChild(row);
+              }
+
+              // Atualiza status
+              const badge = row.querySelector('.status-badge');
+              badge.className = `status-badge status-${status.toLowerCase()}`;
+              badge.innerText = status;
+          }
+
+          console.log(`[BOOT] ${stepName}: ${status}`);
       };
 
       // ======================================================
-      // 2) FUNÇÃO DE FINALIZAÇÃO (Remove Loader)
+      // 3) FUNÇÃO DE FINALIZAÇÃO (Remove Loader)
       // ======================================================
       window.finishLoading = function() {
-        if (window.gameIsReady) return;
-        window.gameIsReady = true;
-        
-        window.reportBootStep('Loader Removal', 'OK');
-        console.log("[BOOT] Removendo overlay de carregamento.");
-        
-        const loader = document.getElementById('loading-overlay');
-        if (loader) {
-            loader.style.opacity = '0';
-            // Garante que o CSS não bloqueie clicks
-            loader.style.pointerEvents = 'none';
-            setTimeout(() => {
-                loader.style.display = 'none';
-            }, 500);
-        }
+          if (window.gameIsReady) return;
+          window.gameIsReady = true;
+
+          window.reportBootStep('Loader Overlay', 'REMOVIDO');
+          console.log("[BOOT] Removendo tela de carregamento.");
+
+          const loader = document.getElementById('loading-overlay');
+          if (loader) {
+              loader.style.opacity = '0';
+              loader.style.pointerEvents = 'none';
+              setTimeout(() => { loader.style.display = 'none'; }, 500);
+          }
       };
 
       // ======================================================
-      // 3) LISTENER DE ERROS GLOBAIS
+      // 4) TRATAMENTO DE ERROS GLOBAIS
       // ======================================================
-      window.onerror = function(msg, url, line, col, error) {
-        // Ignora erros não críticos de ResizeObserver
-        if (msg && typeof msg === 'string' && msg.includes('ResizeObserver')) return false;
-        
-        bootLog(`Erro Global: ${msg}`, 'error');
-        window.reportBootStep('Global JS Runtime', 'ERROR');
-        
-        const statusEl = document.getElementById('loading-status');
-        if (statusEl) {
-            statusEl.innerText = "Erro detectado. Tentando recuperar...";
-            statusEl.style.color = "#f87171";
-        }
-        
-        // Em caso de erro, mostramos o botão de força bruta imediatamente
-        const btn = document.getElementById('force-start-btn');
-        if (btn) btn.style.display = 'block';
-        
-        return false;
+      window.onerror = function(msg, url, line) {
+          if (typeof msg === 'string' && msg.includes('ResizeObserver')) return false;
+          
+          window.reportBootStep('Global JS Runtime', 'ERROR');
+          const list = document.getElementById('debug-steps-list');
+          if (list) {
+              const errDiv = document.createElement('div');
+              errDiv.style.color = '#f87171';
+              errDiv.style.marginTop = '8px';
+              errDiv.style.fontSize = '10px';
+              errDiv.innerText = `ERR: ${msg}`;
+              list.appendChild(errDiv);
+          }
+          
+          // Fallback: Tenta liberar a tela mesmo com erro
+          setTimeout(() => {
+              const btn = document.getElementById('debug-force-btn');
+              if(btn) btn.innerText = "ERRO DETECTADO - CLIQUE PARA FORÇAR";
+              btn.style.backgroundColor = "#dc2626";
+          }, 500);
+          
+          return false;
       };
 
       // ======================================================
-      // 4) INICIALIZAÇÃO DO DOM
+      // 5) INICIALIZAÇÃO DOM
       // ======================================================
       document.addEventListener("DOMContentLoaded", function() {
           window.reportBootStep('HTML DOM Loaded', 'OK');
-          
-          const root = document.getElementById('root');
-          
-          // Fallback: Polling para detectar React
-          let checks = 0;
-          const checkInterval = setInterval(() => {
-              checks++;
-              // Se o root tiver filhos, o React renderizou algo
-              if (root && root.childElementCount > 0) {
-                  window.reportBootStep('React Mount (Polling)', 'OK');
-                  clearInterval(checkInterval);
-                  // Pequeno delay para garantir que o render visual terminou
-                  setTimeout(window.finishLoading, 100);
-              }
-              
-              // Se passar 4 segundos e nada...
-              if (checks > 16 && !window.gameIsReady) {
-                  document.getElementById('loading-status').innerText = "Conexão lenta... finalizando...";
-                  const btn = document.getElementById('force-start-btn');
-                  if (btn) btn.style.display = 'block';
-              }
-          }, 250);
-          
-          // Handler do botão de emergência
-          const btn = document.getElementById('force-start-btn');
-          if(btn) btn.onclick = function() {
-              bootLog("Usuário clicou em FORÇAR INÍCIO");
+
+          // Botão de Forçar
+          document.getElementById('debug-force-btn').onclick = function() {
+              window.reportBootStep('Force Start', 'TRIGGERED');
               window.finishLoading();
           };
+
+          // Monitoramento Passivo do React
+          const root = document.getElementById('root');
+          let checks = 0;
+          const interval = setInterval(() => {
+              checks++;
+              if (root && root.childElementCount > 0) {
+                  window.reportBootStep('React Mount Detected', 'OK');
+                  clearInterval(interval);
+                  // Pequeno delay para garantir pintura
+                  setTimeout(window.finishLoading, 200);
+              }
+              // Timeout de segurança (5s)
+              if (checks > 20 && !window.gameIsReady) {
+                  const status = document.getElementById('loading-status');
+                  if(status) status.innerText = "Demorando mais que o normal...";
+              }
+          }, 250);
       });
     </script>
     <script type="importmap">
@@ -250,23 +237,23 @@
     </script>
   </head>
   <body>
-    <!-- Overlay de Loading -->
+    <!-- OVERLAY DE LOADING -->
     <div id="loading-overlay">
         <div class="spinner"></div>
         <div class="loading-title">Aspiradores vs Fantasmas</div>
-        <p id="loading-status" class="loading-text">Inicializando engine...</p>
-        <button id="force-start-btn">⚠️ JOGAR AGORA (DEBUG)</button>
+        <p id="loading-status" class="loading-text">Carregando Jogo...</p>
     </div>
 
-    <!-- Painel de Debug -->
-    <div id="debug-panel">
-        <div class="debug-header">
-            <span>BOOT DEBUG</span>
-            <span>v1.2</span>
+    <!-- PAINEL DE DEBUG VISUAL -->
+    <div id="visual-debug-panel">
+        <h3>
+            <span>🔧 DEBUG BOOT</span>
+            <span style="font-size:10px; opacity:0.7">v2.0</span>
+        </h3>
+        <div id="debug-steps-list">
+            <!-- Passos serão inseridos aqui via JS -->
         </div>
-        <div id="debug-content">
-            <!-- Steps injetados via JS -->
-        </div>
+        <button id="debug-force-btn">Forçar Iniciar Jogo</button>
     </div>
 
     <div id="root"></div>
