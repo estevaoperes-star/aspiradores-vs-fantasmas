@@ -25,13 +25,12 @@ class ErrorBoundary extends Component<Props, State> {
   componentDidCatch(error: Error, errorInfo: ErrorInfo) {
     console.error("React Error Boundary caught:", error, errorInfo);
     
-    // 1. Reportar ao Painel de Debug
+    // Reportar ao Painel de Debug
     if (window.reportBootStep) {
-        window.reportBootStep("React Crash: " + error.message.substring(0, 20), "ERROR");
+        window.reportBootStep("CRASH: " + error.message.substring(0, 25), "ERROR");
     }
 
-    // 2. Tentar remover o loader para que o usuário veja a mensagem de erro
-    // Forçamos via estilo direto para garantir
+    // Forçar remoção do loader para mostrar o erro
     const loader = document.getElementById('loading-overlay');
     if (loader) {
         loader.style.display = 'none';
@@ -66,12 +65,13 @@ class ErrorBoundary extends Component<Props, State> {
   }
 }
 
+// 1. Checkpoint Pre-Render
 const rootElement = document.getElementById('root');
 if (!rootElement) {
     throw new Error("Could not find root element to mount to");
 }
 
-if(window.reportBootStep) window.reportBootStep('ReactDOM Render', 'PENDING');
+if(window.reportBootStep) window.reportBootStep('ReactDOM Init', 'PENDING');
 
 const root = ReactDOM.createRoot(rootElement);
 
@@ -83,10 +83,11 @@ root.render(
   </React.StrictMode>
 );
 
-if(window.reportBootStep) window.reportBootStep('ReactDOM Render', 'OK');
+// 2. Checkpoint Post-Render (Sync)
+if(window.reportBootStep) window.reportBootStep('ReactDOM Render Triggered', 'OK');
 
 // Backup para sinalização imediata
 requestAnimationFrame(() => {
-    // Isso roda depois que o React agendou a renderização inicial
-    if(window.reportBootStep) window.reportBootStep('RAF Check', 'OK');
+    // Isso roda no próximo frame, indicando que o script principal terminou
+    if(window.reportBootStep) window.reportBootStep('Main Script Done', 'OK');
 });

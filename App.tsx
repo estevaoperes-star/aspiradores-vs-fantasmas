@@ -22,13 +22,12 @@ const App: React.FC = () => {
   const [currentScene, setCurrentScene] = useState<SceneName>('MENU_PRINCIPAL');
   const [selectedLevelId, setSelectedLevelId] = useState<number>(1);
   
-  // Safe Initializers (Previnem crash no mount se localStorage estiver corrompido)
+  // Safe Initializers
   const [stars, setStars] = useState<number>(() => safeIntInit('avf_stars', 100));
   const [poeiraCoins, setPoeiraCoins] = useState<number>(() => safeIntInit('avf_poeiracoins', 0));
   const [ownedItems, setOwnedItems] = useState<number[]>(() => safeJsonInit('avf_owned_items', []));
   const [upgradeLevels, setUpgradeLevels] = useState<UpgradeState>(() => safeJsonInit('avf_upgrades', { BASIC: 1, TURBO: 1, ROBOT: 1, ENERGY: 1, MEGA: 1 }));
   
-  // Equip items init needs specific logic
   const [equippedItems, setEquippedItems] = useState<EquippedItems>(() => {
     try {
         const saved = localStorage.getItem('avf_equipped_items');
@@ -37,46 +36,44 @@ const App: React.FC = () => {
     return { SKINS: null, EFEITOS: null, MUSIC: null, BACKGROUND: null, CURSOR: null };
   });
 
-  // --- FUNÇÃO DE BOOT UNIFICADA ---
+  // ======================================================
+  // FUNÇÃO DE BOOT UNIFICADA
+  // ======================================================
   const startAspiradoresVsFantasmas = async () => {
     try {
-        if(window.reportBootStep) window.reportBootStep('React: Start Boot', 'PENDING');
+        if(window.reportBootStep) window.reportBootStep('App Component Mount', 'OK');
+        console.log("[BOOT] Iniciando startAspiradoresVsFantasmas...");
 
-        // 1. Verificar Assets Essenciais (Simulado, pois são SVGs inline)
-        if(window.reportBootStep) window.reportBootStep('Assets Check', 'PENDING');
-        // Apenas garantimos que as constantes carregaram
+        // 1. Validar Constantes Críticas (Assets)
+        if(window.reportBootStep) window.reportBootStep('Asset Integrity Check', 'PENDING');
         if (!Constants.TOWER_TYPES || !Constants.LEVELS) {
-            throw new Error("Critical Game Constants Missing");
+            throw new Error("Constantes do jogo falharam ao carregar.");
         }
-        if(window.reportBootStep) window.reportBootStep('Assets Check', 'OK');
+        if(window.reportBootStep) window.reportBootStep('Asset Integrity Check', 'OK');
 
-        // 2. Configurar Estado Inicial
-        if(window.reportBootStep) window.reportBootStep('State Init', 'OK');
+        // 2. Pré-carregar algo se necessário (Síncrono/Rápido)
+        if(window.reportBootStep) window.reportBootStep('Scene Setup', 'OK');
 
-        // 3. Simular "Network" Check (Não bloqueante)
-        // Mesmo que falhe, não para o jogo.
-        const networkCheck = new Promise((resolve) => setTimeout(resolve, 500));
-        networkCheck.then(() => {
-            if(window.reportBootStep) window.reportBootStep('Network (Background)', 'OK');
-        });
-
-        // 4. Finalizar
-        console.log("[BOOT] Cena inicial pronta, removendo loading.");
-        if(window.reportBootStep) window.reportBootStep('Boot Sequence', 'OK');
+        // 3. NÃO esperar rede. Remover loader IMEDIATAMENTE.
+        // O jogo deve abrir mesmo que backend/api falhem (se existissem).
         
-        // Chama a função global para remover o HTML overlay
+        console.log("[BOOT] Cena inicial pronta, removendo loading.");
+        if(window.reportBootStep) window.reportBootStep('Boot Sequence Finished', 'OK');
+        
+        // Chamada final para liberar a tela
         if (window.finishLoading) window.finishLoading();
 
     } catch (e: any) {
-        console.error("[BOOT] Erro ao iniciar o jogo:", e);
-        if(window.reportBootStep) window.reportBootStep('Boot Error: ' + e.message, 'ERROR');
-        // Mesmo com erro, tentamos liberar a tela para mostrar o ErrorBoundary ou menu
+        console.error("[BOOT] Erro Fatal no Boot:", e);
+        if(window.reportBootStep) window.reportBootStep('Boot Exception: ' + e.message, 'ERROR');
+        
+        // Mesmo com erro, tentamos mostrar a interface para o ErrorBoundary capturar
         if (window.finishLoading) window.finishLoading();
     }
   };
 
   useEffect(() => {
-      // Chama o boot ao montar o componente
+      // Inicia o processo assim que o componente monta
       startAspiradoresVsFantasmas();
   }, []);
 
@@ -92,7 +89,6 @@ const App: React.FC = () => {
     setEquippedItems(prev => {
         const next = { ...prev };
         let changed = false;
-        // Se o item não está mais nos ownedItems (raro, mas possível em updates), desequipa
         (['SKINS', 'EFEITOS', 'MUSIC', 'BACKGROUND', 'CURSOR'] as const).forEach(key => {
             const id = next[key];
             if (id && !ownedItems.includes(id)) {
