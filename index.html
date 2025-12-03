@@ -60,10 +60,23 @@
           font-family: monospace;
           font-size: 12px;
       }
+      .slow-msg {
+          margin-top: 10px;
+          font-size: 12px;
+          color: #fbbf24;
+          opacity: 0;
+          transition: opacity 1s;
+      }
     </style>
     <script>
-      // 1. Sistema de Reporte de Erros
+      // 1. Configuração Global
+      window.gameLoaded = false;
+
+      // 2. Sistema de Reporte de Erros (Reais)
       function showError(title, detail) {
+          // Só mostra erro se o jogo ainda não carregou
+          if (window.gameLoaded) return;
+          
           const loader = document.getElementById('loading-overlay');
           if(loader) {
               loader.innerHTML = '<div class="error-msg"><h2>'+title+'</h2><p>'+detail+'</p><button onclick="window.location.reload()" style="margin-top:10px;padding:8px;background:white;color:black;border:none;cursor:pointer;">Recarregar</button></div>';
@@ -71,6 +84,9 @@
       }
 
       window.onerror = function(msg, url, line, col, error) {
+        // Ignora erros de ResizeObserver que são comuns e inofensivos
+        if (msg && msg.includes && msg.includes('ResizeObserver')) return false;
+        
         console.error("GLOBAL ERROR:", msg);
         showError("Erro Crítico", msg);
         return false;
@@ -78,28 +94,50 @@
 
       window.onunhandledrejection = function(event) {
           console.error("UNHANDLED PROMISE:", event.reason);
-          showError("Falha no Carregamento", "Não foi possível carregar os módulos do jogo.<br>" + event.reason);
+          // Não bloqueia a tela por promessas falhas, apenas loga, a menos que seja crítico
+          // showError("Falha no Carregamento", event.reason); 
       };
 
-      // 2. Timeout de Segurança Agressivo (3.5s)
-      setTimeout(() => {
+      // 3. Sistema de Polling (Verificação Contínua)
+      // Em vez de assumir erro após X segundos, verificamos se o React montou
+      document.addEventListener("DOMContentLoaded", function() {
           const loader = document.getElementById('loading-overlay');
           const root = document.getElementById('root');
+          const slowMsg = document.getElementById('slow-loading-msg');
           
-          if (loader && loader.style.display !== 'none') {
-              // Se o root estiver vazio, provavelmente falhou silenciosamente
-              if (!root || root.childElementCount === 0) {
-                  console.warn("Root is empty after timeout.");
-                  // Não removemos o loader, mostramos erro nele
-                  showError("Tempo Esgotado", "O jogo demorou muito para iniciar. Verifique sua conexão ou tente recarregar.");
-              } else {
-                  // Se o root tem coisa, só remove o loader
-                  console.log("Forcing loader removal (Safe Mode)");
-                  loader.style.opacity = '0';
-                  setTimeout(() => loader.style.display = 'none', 500);
+          let checkInterval = setInterval(() => {
+              // Se o root tem filhos, o React montou o app com sucesso
+              if (root && root.childElementCount > 0) {
+                  window.gameLoaded = true;
+                  clearInterval(checkInterval);
+                  
+                  // Remove o loader suavemente
+                  if (loader) {
+                      loader.style.opacity = '0';
+                      setTimeout(() => {
+                          loader.style.display = 'none';
+                      }, 500);
+                  }
               }
-          }
-      }, 3500);
+          }, 200); // Checa a cada 200ms
+
+          // 4. Timeout de Aviso (Não bloqueante) - 8 segundos
+          setTimeout(() => {
+              if (!window.gameLoaded && slowMsg) {
+                  slowMsg.style.opacity = '1'; // Mostra aviso de lentidão, mas continua tentando carregar
+              }
+          }, 8000);
+
+          // 5. Timeout Limite (Fallback final) - 45 segundos
+          setTimeout(() => {
+              if (!window.gameLoaded && (!root || root.childElementCount === 0)) {
+                  clearInterval(checkInterval);
+                  // Tenta forçar a remoção mesmo assim, talvez o React tenha montado algo invisível
+                  console.warn("Timeout limite atingido. Forçando remoção do loader.");
+                  if(loader) loader.style.display = 'none';
+              }
+          }, 45000);
+      });
     </script>
     <script type="importmap">
     {
@@ -115,7 +153,8 @@
   <body>
     <div id="loading-overlay">
         <div class="spinner"></div>
-        <p>Carregando...</p>
+        <p>Carregando Jogo...</p>
+        <p id="slow-loading-msg" class="slow-msg">Conexão lenta... aguardando carregamento.</p>
     </div>
     <div id="root"></div>
   </body>

@@ -2,8 +2,9 @@ import React, { Component, ErrorInfo, ReactNode } from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App';
 
-// --- REMOÇÃO DO LOADER ---
-const removeLoader = () => {
+// Função auxiliar para sinalizar ao HTML que o JS assumiu o controle
+const signalGameLoaded = () => {
+    (window as any).gameLoaded = true;
     const loader = document.getElementById('loading-overlay');
     if (loader) {
         loader.style.opacity = '0';
@@ -35,8 +36,7 @@ class ErrorBoundary extends Component<Props, State> {
 
   componentDidCatch(error: Error, errorInfo: ErrorInfo) {
     console.error("React Error Boundary caught:", error, errorInfo);
-    // Garante que o loader saia da frente para mostrar o erro
-    removeLoader();
+    signalGameLoaded(); // Remove loader para mostrar o erro
   }
 
   render() {
@@ -51,7 +51,7 @@ class ErrorBoundary extends Component<Props, State> {
             </div>
             <button 
                 onClick={() => {
-                    localStorage.clear(); // Limpa dados corrompidos
+                    localStorage.clear();
                     window.location.reload();
                 }} 
                 className="px-6 py-2 bg-red-600 hover:bg-red-500 rounded font-bold transition-colors text-white"
@@ -72,6 +72,8 @@ if (!rootElement) {
     throw new Error("Could not find root element to mount to");
 }
 
+console.log("Iniciando Renderização React...");
+
 const root = ReactDOM.createRoot(rootElement);
 
 root.render(
@@ -82,7 +84,9 @@ root.render(
   </React.StrictMode>
 );
 
-// Fallback de segurança: remove o loader após 1 segundo se nada explodir
-setTimeout(() => {
-    removeLoader();
-}, 1000);
+// Sinaliza carregamento imediatamente após o agendamento do render
+// O HTML também tem um polling como backup
+requestAnimationFrame(() => {
+    console.log("Render agendado. Removendo loader...");
+    signalGameLoaded();
+});
