@@ -10,8 +10,6 @@ import * as Constants from './constants';
 
 declare global {
     interface Window {
-        DEBUG_VISUAL: boolean;
-        reportBootStep: (step: string, status: 'PENDING' | 'OK' | 'ERROR') => void;
         finishLoading: () => void;
     }
 }
@@ -35,32 +33,13 @@ const App: React.FC = () => {
     return { SKINS: null, EFEITOS: null, MUSIC: null, BACKGROUND: null, CURSOR: null };
   });
 
-  // Confirmação Visual de Montagem
+  // Sinaliza que o React montou e remove o loader
   useLayoutEffect(() => {
       setIsMounted(true);
-      if(window.reportBootStep) window.reportBootStep('App Component Rendered', 'OK');
-  }, []);
-
-  const startAspiradoresVsFantasmas = async () => {
-    try {
-        // ETAPA 1: Assets e Constantes
-        if (!Constants.TOWER_TYPES || !Constants.LEVELS) {
-             throw new Error("Assets Críticos Ausentes");
-        }
-        
-        // ETAPA FINAL
-        if(window.reportBootStep) window.reportBootStep('Boot Logic Finished', 'OK');
-        if (window.finishLoading) window.finishLoading();
-
-    } catch (e: any) {
-        console.error("Boot Error:", e);
-        if(window.reportBootStep) window.reportBootStep('Boot Logic Exception', 'ERROR');
-        if (window.finishLoading) window.finishLoading();
-    }
-  };
-
-  useEffect(() => {
-      startAspiradoresVsFantasmas();
+      // Pequeno delay para garantir que o primeiro paint ocorreu
+      setTimeout(() => {
+          if (window.finishLoading) window.finishLoading();
+      }, 100);
   }, []);
 
   // --- Effects de Persistência ---
@@ -168,12 +147,8 @@ const App: React.FC = () => {
 
   return (
     <div className={`w-full h-full bg-slate-900 text-white relative z-0 ${equippedItems.CURSOR === 12 ? 'cursor-none' : ''}`}>
-      {/* Fallback de Renderização */}
-      {!isMounted && (
-        <div className="absolute inset-0 flex items-center justify-center bg-blue-900 z-50">
-            Renderizando Interface...
-        </div>
-      )}
+      {/* Estado visual enquanto React hidrata/monta */}
+      {!isMounted && <div className="absolute inset-0 bg-slate-900 z-50"></div>}
 
       {equippedItems.CURSOR === 12 && (
           <div className="fixed pointer-events-none z-[9999]" 

@@ -16,7 +16,10 @@
         background-color: #0f172a;
         touch-action: none;
         font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        user-select: none;
+        -webkit-user-select: none;
       }
+      
       #game-root {
         width: 100%;
         height: 100%;
@@ -26,7 +29,7 @@
         display: block;
       }
       
-      /* --- OVERLAY DE LOADING --- */
+      /* --- OVERLAY DE LOADING (Produção) --- */
       #loading-overlay {
         position: fixed;
         top: 0; left: 0; right: 0; bottom: 0;
@@ -37,209 +40,42 @@
         align-items: center;
         justify-content: center;
         z-index: 9999;
-        transition: opacity 0.5s ease;
+        transition: opacity 0.6s ease-out, visibility 0.6s;
       }
+      
       .spinner {
-        width: 60px; height: 60px;
-        border: 6px solid rgba(255,255,255,0.1);
+        width: 50px; height: 50px;
+        border: 4px solid rgba(255,255,255,0.1);
         border-radius: 50%;
-        border-top-color: #3b82f6;
-        animation: spin 1s ease-in-out infinite;
-        margin-bottom: 24px;
+        border-top-color: #fbbf24; /* Amber-400 */
+        animation: spin 0.8s ease-in-out infinite;
+        margin-bottom: 20px;
       }
+      
       @keyframes spin { to { transform: rotate(360deg); } }
-      .loading-title { font-size: 24px; font-weight: 800; margin-bottom: 8px; text-transform: uppercase; letter-spacing: 1px; }
-      .loading-text { font-size: 14px; color: #94a3b8; font-family: monospace; }
-
-      /* --- PAINEL DE DEBUG VISUAL (On-Screen) --- */
-      #visual-debug-panel {
-        display: none; /* Controlado via JS */
-        position: fixed;
-        bottom: 20px;
-        left: 20px;
-        width: 350px;
-        background: rgba(0, 0, 0, 0.95);
-        border: 2px solid #333;
-        border-radius: 12px;
-        padding: 16px;
-        color: #fff;
-        font-family: 'Consolas', monospace;
-        font-size: 12px;
-        z-index: 10000;
-        box-shadow: 0 10px 25px rgba(0,0,0,0.5);
+      
+      .loading-title { 
+        font-size: 20px; 
+        font-weight: 800; 
+        text-transform: uppercase; 
+        letter-spacing: 2px;
+        color: #f1f5f9;
       }
-      #visual-debug-panel h3 {
-          margin: 0 0 10px 0;
-          padding-bottom: 8px;
-          border-bottom: 1px solid #444;
-          color: #facc15;
-          font-weight: bold;
-          font-size: 14px;
-          display: flex;
-          justify-content: space-between;
-      }
-      .debug-row {
-          display: flex;
-          justify-content: space-between;
-          margin-bottom: 6px;
-          padding: 2px 0;
-      }
-      .status-badge {
-          font-weight: bold;
-          padding: 2px 6px;
-          border-radius: 4px;
-          min-width: 60px;
-          text-align: center;
-      }
-      .status-pending { background: #334155; color: #94a3b8; }
-      .status-ok { background: #166534; color: #4ade80; }
-      .status-error { background: #991b1b; color: #fecaca; }
-
-      /* Botão Force Start dentro do painel */
-      #debug-force-btn {
-          margin-top: 15px;
-          width: 100%;
-          padding: 10px;
-          background: #2563eb;
-          color: white;
-          border: none;
-          border-radius: 6px;
-          font-weight: bold;
-          cursor: pointer;
-          text-transform: uppercase;
-      }
-      #debug-force-btn:hover { background: #1d4ed8; }
     </style>
+    
     <script>
-      // ======================================================
-      // 1) CONFIGURAÇÃO GLOBAL
-      // ======================================================
-      window.DEBUG_VISUAL = true;
-      window.gameIsReady = false;
-
-      // ======================================================
-      // 2) SISTEMA DE LOG VISUAL
-      // ======================================================
-      window.reportBootStep = function(stepName, status) {
-          if (!window.DEBUG_VISUAL) return;
-          const panel = document.getElementById('visual-debug-panel');
-          const list = document.getElementById('debug-steps-list');
-          
-          if (panel && list) {
-              panel.style.display = 'block';
-              const rowId = 'row-' + stepName.replace(/[^a-zA-Z0-9]/g, '');
-              let row = document.getElementById(rowId);
-              if (!row) {
-                  row = document.createElement('div');
-                  row.id = rowId;
-                  row.className = 'debug-row';
-                  row.innerHTML = `<span class="step-name">${stepName}</span> <span class="status-badge status-pending">PENDENTE</span>`;
-                  list.appendChild(row);
-              }
-              const badge = row.querySelector('.status-badge');
-              badge.className = `status-badge status-${status.toLowerCase()}`;
-              badge.innerText = status;
-          }
-          console.log(`[BOOT] ${stepName}: ${status}`);
-      };
-
-      // ======================================================
-      // 3) FUNÇÃO DE FINALIZAÇÃO (Remove Loader)
-      // ======================================================
+      // Função simplificada para remover o loader (Chamada pelo App.tsx)
       window.finishLoading = function() {
-          if (window.gameIsReady) return;
-          window.gameIsReady = true;
-
-          window.reportBootStep('Loader Overlay', 'REMOVIDO');
-          console.log("[BOOT] Removendo tela de carregamento.");
-
           const loader = document.getElementById('loading-overlay');
           if (loader) {
               loader.style.opacity = '0';
               loader.style.pointerEvents = 'none';
-              setTimeout(() => { loader.style.display = 'none'; }, 500);
+              setTimeout(() => { loader.style.display = 'none'; }, 600);
           }
       };
-
-      // ======================================================
-      // 4) TRATAMENTO DE ERROS GLOBAIS
-      // ======================================================
-      window.onerror = function(msg, url, line) {
-          if (typeof msg === 'string' && msg.includes('ResizeObserver')) return false;
-          window.reportBootStep('Global JS Runtime', 'ERROR');
-          const list = document.getElementById('debug-steps-list');
-          if (list) {
-              const errDiv = document.createElement('div');
-              errDiv.style.color = '#f87171';
-              errDiv.style.marginTop = '8px';
-              errDiv.style.fontSize = '10px';
-              errDiv.innerText = `ERR: ${msg}`;
-              list.appendChild(errDiv);
-          }
-          // Muda cor do botão para alertar
-          setTimeout(() => {
-              const btn = document.getElementById('debug-force-btn');
-              if(btn) {
-                btn.innerText = "ERRO DETECTADO - TENTAR FORÇAR";
-                btn.style.backgroundColor = "#dc2626";
-              }
-          }, 500);
-          return false;
-      };
-
-      // ======================================================
-      // 5) INICIALIZAÇÃO DOM
-      // ======================================================
-      document.addEventListener("DOMContentLoaded", function() {
-          window.reportBootStep('HTML DOM Loaded', 'OK');
-
-          // Lógica do Botão de Forçar
-          document.getElementById('debug-force-btn').onclick = function() {
-              window.reportBootStep('Force Start', 'TRIGGERED');
-              
-              // Verifica se a função de montagem existe no escopo global
-              const mountFn = window.mountGameApp;
-
-              if (typeof mountFn === 'function') {
-                  console.log("[BOOT] Encontrou window.mountGameApp. Executando...");
-                  try {
-                      mountFn();
-                  } catch(e) {
-                      console.error(e);
-                      window.reportBootStep('Manual Mount Failed', 'ERROR');
-                  }
-              } else {
-                  // Se não existir, reporta erro crítico
-                  console.error("[BOOT] window.mountGameApp is undefined");
-                  window.reportBootStep('Mount Fn Not Found', 'ERROR');
-                  
-                  const status = document.getElementById('loading-status');
-                  if(status) status.innerText = "ERRO CRÍTICO: Reinicie a página.";
-              }
-              
-              window.finishLoading();
-          };
-
-          // Monitoramento Passivo
-          const root = document.getElementById('game-root');
-          let checks = 0;
-          const interval = setInterval(() => {
-              checks++;
-              if (root && root.childElementCount > 0) {
-                  window.reportBootStep('Game Container Found', 'OK');
-                  clearInterval(interval);
-                  setTimeout(window.finishLoading, 200);
-              }
-              if (checks > 40 && !window.gameIsReady) {
-                  // Timeout de 10 segundos
-                  const status = document.getElementById('loading-status');
-                  if(status) status.innerText = "Carregando... (Tente o botão Forçar)";
-              }
-          }, 250);
-      });
     </script>
     
-    <!-- IMPORTMAP ROBUSTO -->
+    <!-- IMPORTMAP OTIMIZADO -->
     <script type="importmap">
     {
       "imports": {
@@ -257,26 +93,13 @@
     <!-- OVERLAY DE LOADING -->
     <div id="loading-overlay">
         <div class="spinner"></div>
-        <div class="loading-title">Aspiradores vs Fantasmas</div>
-        <p id="loading-status" class="loading-text">Inicializando Motor de Jogo...</p>
-    </div>
-
-    <!-- PAINEL DE DEBUG VISUAL -->
-    <div id="visual-debug-panel">
-        <h3>
-            <span>🔧 DEBUG BOOT</span>
-            <span style="font-size:10px; opacity:0.7">v2.6 Root Fix</span>
-        </h3>
-        <div id="debug-steps-list">
-            <!-- Passos serão inseridos aqui via JS -->
-        </div>
-        <button id="debug-force-btn">Forçar Iniciar Jogo</button>
+        <div class="loading-title">Carregando...</div>
     </div>
 
     <!-- CONTAINER DO JOGO -->
     <div id="game-root"></div>
 
-    <!-- CARREGAMENTO EXPLÍCITO DO MÓDULO PRINCIPAL -->
+    <!-- STARTUP -->
     <script type="module" src="./index.tsx"></script>
   </body>
 </html>
