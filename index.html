@@ -57,97 +57,145 @@
           margin-top: 10px;
           text-align: center;
           font-weight: bold;
+          font-family: monospace;
       }
 
-      /* Botão de Emergência (Force Start) */
+      /* Painel de Debug (Só aparece se DEBUG_BOOT = true) */
+      #debug-panel {
+        display: none;
+        position: fixed;
+        bottom: 10px;
+        right: 10px;
+        width: 300px;
+        background: rgba(0, 0, 0, 0.85);
+        color: #00ff00;
+        padding: 10px;
+        border-radius: 8px;
+        border: 1px solid #333;
+        font-family: monospace;
+        font-size: 10px;
+        z-index: 10000;
+        pointer-events: none;
+      }
+      .debug-step { margin-bottom: 2px; }
+      .debug-step.ok { color: #4ade80; }
+      .debug-step.pending { color: #facc15; }
+      .debug-step.error { color: #f87171; }
+
+      /* Botão de Emergência */
       #force-start-btn {
-          display: none; /* Invisível por padrão */
+          display: none;
           margin-top: 25px;
-          padding: 14px 28px;
-          background-color: #22c55e;
+          padding: 12px 24px;
+          background-color: #dc2626; /* Vermelho para indicar fallback */
           color: white;
           border: none;
-          border-radius: 12px;
-          font-weight: 800;
-          font-size: 16px;
+          border-radius: 8px;
+          font-weight: bold;
           cursor: pointer;
-          box-shadow: 0 4px 0 #15803d;
-          animation: pulse 2s infinite;
-          text-transform: uppercase;
-          letter-spacing: 1px;
+          z-index: 10001;
       }
-      #force-start-btn:active {
-          transform: translateY(4px);
-          box-shadow: none;
-      }
-      @keyframes pulse { 0% { transform: scale(1); } 50% { transform: scale(1.05); } 100% { transform: scale(1); } }
     </style>
     <script>
-      // 1. Função Global de Liberação (Acessível pelo React)
+      // ======================================================
+      // 1) FLAG GLOBAL DE DEBUG
+      // ======================================================
+      window.DEBUG_BOOT = true; 
       window.gameIsReady = false;
-      
-      window.finishLoading = function() {
-          if (window.gameIsReady) return;
-          window.gameIsReady = true;
-          
-          console.log("[BOOT] Jogo sinalizou prontidão.");
-          const loader = document.getElementById('loading-overlay');
-          if (loader) {
-              loader.style.opacity = '0';
-              setTimeout(() => {
-                  loader.style.display = 'none';
-              }, 500);
-          }
+
+      // Utilitário de Log
+      function bootLog(msg, type = 'info') {
+        if (!window.DEBUG_BOOT) return;
+        const prefix = "[BOOT DEBUG]";
+        if (type === 'error') console.error(prefix, msg);
+        else console.log(prefix, msg);
+      }
+
+      // Atualiza o painel visual
+      window.reportBootStep = function(stepName, status) {
+        if (!window.DEBUG_BOOT) return;
+        
+        const panel = document.getElementById('debug-panel');
+        if (panel) {
+            panel.style.display = 'block';
+            let line = document.getElementById('step-' + stepName);
+            if (!line) {
+                line = document.createElement('div');
+                line.id = 'step-' + stepName;
+                line.className = 'debug-step';
+                panel.appendChild(line);
+            }
+            
+            let icon = status === 'OK' ? '[✔]' : (status === 'ERROR' ? '[✖]' : '[...]');
+            line.innerHTML = `${icon} ${stepName}`;
+            line.className = `debug-step ${status.toLowerCase()}`;
+        }
+        bootLog(`${stepName}: ${status}`);
       };
 
-      // 2. Listener de Erros Globais (Não trava o load, apenas loga)
+      // ======================================================
+      // 2) FUNÇÃO DE FINALIZAÇÃO (Remove Loader)
+      // ======================================================
+      window.finishLoading = function() {
+        if (window.gameIsReady) return;
+        window.gameIsReady = true;
+        
+        window.reportBootStep('Remove Loader', 'OK');
+        
+        const loader = document.getElementById('loading-overlay');
+        if (loader) {
+            loader.style.opacity = '0';
+            setTimeout(() => {
+                loader.style.display = 'none';
+            }, 500);
+        }
+      };
+
+      // ======================================================
+      // 3) LISTENER DE ERROS GLOBAIS
+      // ======================================================
       window.onerror = function(msg, url, line, col, error) {
-        // Ignora erros comuns de ResizeObserver
         if (msg && typeof msg === 'string' && msg.includes('ResizeObserver')) return false;
-        console.warn("[BOOT ERROR]", msg);
-        // Em caso de erro, força o load após breve delay para não travar o usuário
-        setTimeout(window.finishLoading, 2000); 
+        
+        bootLog(`Erro Global Detectado: ${msg}`, 'error');
+        window.reportBootStep('Global JS', 'ERROR');
+        
+        const statusEl = document.getElementById('loading-status');
+        if (statusEl) statusEl.innerText = "Erro no boot. Tentando recuperar...";
+        
+        // Em caso de erro, força a entrada após 2s para não travar o usuário
+        setTimeout(() => window.finishLoading(), 2000);
         return false;
       };
 
       document.addEventListener("DOMContentLoaded", function() {
-          console.log("[BOOT] DOM carregado. Iniciando monitoramento...");
-          const root = document.getElementById('root');
-          const btn = document.getElementById('force-start-btn');
-          const status = document.getElementById('loading-status');
+          window.reportBootStep('DOM Content Loaded', 'OK');
           
-          // 3. Monitoramento Passivo (Polling)
-          // Verifica a cada 250ms se o React injetou algo no #root
+          const root = document.getElementById('root');
+          
+          // Fallback de Polling (Caso o React monte mas esqueça de avisar)
+          let pollCount = 0;
           const checkInterval = setInterval(() => {
+              pollCount++;
               if (root && root.childElementCount > 0) {
-                  console.log("[BOOT] Conteúdo detectado no #root. Liberando overlay.");
+                  window.reportBootStep('React Mount Detected (Polling)', 'OK');
                   clearInterval(checkInterval);
                   window.finishLoading();
               }
-          }, 250);
-
-          // 4. Timer de Segurança (Mostra botão após 5 segundos)
-          setTimeout(() => {
-              if (!window.gameIsReady && document.getElementById('loading-overlay').style.display !== 'none') {
-                  console.warn("[BOOT] Carregamento lento detectado. Habilitando botão manual.");
-                  if(status) status.innerText = "O carregamento está demorando...";
-                  if(btn) {
-                      btn.style.display = 'block';
-                      btn.onclick = function() {
-                          console.log("[BOOT] Force Start clicado.");
-                          window.finishLoading();
-                      };
-                  }
+              // Se passar 20 segundos (100 * 200ms) e nada...
+              if (pollCount > 100 && !window.gameIsReady) {
+                  const btn = document.getElementById('force-start-btn');
+                  if (btn) btn.style.display = 'block';
+                  document.getElementById('loading-status').innerText = "O jogo está demorando. Tente iniciar manualmente.";
               }
-          }, 5000);
-
-          // 5. Fallback Final (15 segundos - Remove overlay à força)
-          setTimeout(() => {
-             if (!window.gameIsReady && document.getElementById('loading-overlay').style.display !== 'none') {
-                 console.error("[BOOT] Timeout limite atingido. Removendo overlay forçadamente.");
-                 window.finishLoading();
-             }
-          }, 15000);
+          }, 200);
+          
+          // Handler do botão de emergência
+          const btn = document.getElementById('force-start-btn');
+          if(btn) btn.onclick = function() {
+              bootLog("Force Start acionado pelo usuário");
+              window.finishLoading();
+          };
       });
     </script>
     <script type="importmap">
@@ -162,12 +210,20 @@
     </script>
   </head>
   <body>
+    <!-- Overlay de Loading -->
     <div id="loading-overlay">
         <div class="spinner"></div>
         <h2 style="font-weight:bold; font-size: 20px; margin-bottom: 5px;">Aspiradores vs Fantasmas</h2>
-        <p id="loading-status" class="loading-text">Organizando a casa...</p>
-        <button id="force-start-btn">JOGAR AGORA</button>
+        <p id="loading-status" class="loading-text">Inicializando sistema...</p>
+        <button id="force-start-btn">ENTRAR NO JOGO (DEBUG)</button>
     </div>
+
+    <!-- Painel de Debug (Overlay) -->
+    <div id="debug-panel">
+        <div style="border-bottom:1px solid #333; margin-bottom:5px; font-weight:bold;">BOOT DEBUG MODE</div>
+        <!-- Steps serão inseridos aqui via JS -->
+    </div>
+
     <div id="root"></div>
   </body>
 </html>

@@ -8,122 +8,114 @@ import { Options } from './components/Options';
 import { SceneName, UpgradeState, TowerType, EquippedItems, StoreCategory } from './types';
 import * as Constants from './constants';
 
-const App: React.FC = () => {
-  // --- SEGURANÇA DE INICIALIZAÇÃO ---
-  // Sinaliza ao index.html que o React montou o App com sucesso.
-  useEffect(() => {
-      console.log("[App] Componente App montado. Sinalizando fim do carregamento.");
-      // Pequeno delay para garantir que o render visual ocorreu
-      const timer = setTimeout(() => {
-          if ((window as any).finishLoading) {
-              (window as any).finishLoading();
-          } else {
-              // Fallback caso a função global não exista
-              const loader = document.getElementById('loading-overlay');
-              if (loader) { 
-                  loader.style.opacity = '0'; 
-                  setTimeout(() => loader.style.display = 'none', 500);
-              }
-          }
-      }, 100);
-      return () => clearTimeout(timer);
-  }, []);
+// Interface global para o Debug
+declare global {
+    interface Window {
+        DEBUG_BOOT: boolean;
+        reportBootStep: (step: string, status: 'PENDING' | 'OK' | 'ERROR') => void;
+        finishLoading: () => void;
+    }
+}
 
+const App: React.FC = () => {
   // --- Global Persistence State ---
   const [currentScene, setCurrentScene] = useState<SceneName>('MENU_PRINCIPAL');
   const [selectedLevelId, setSelectedLevelId] = useState<number>(1);
   
-  // Moeda Global (Estrelas - Gameplay)
-  const [stars, setStars] = useState<number>(() => {
-    try {
-        const saved = localStorage.getItem('avf_stars');
-        return saved ? parseInt(saved, 10) : 100;
-    } catch { return 100; }
-  });
-
-  // Moeda da Loja (PoeiraCoins - Cosméticos)
-  const [poeiraCoins, setPoeiraCoins] = useState<number>(() => {
-    try {
-        const saved = localStorage.getItem('avf_poeiracoins');
-        return saved ? parseInt(saved, 10) : 0; 
-    } catch { return 0; }
-  });
-
-  // Inventário de Itens Comprados (IDs)
-  const [ownedItems, setOwnedItems] = useState<number[]>(() => {
-    try {
-        const saved = localStorage.getItem('avf_owned_items');
-        return saved ? JSON.parse(saved) : []; 
-    } catch { return []; }
-  });
-
-  // Itens Equipados
+  // Safe Initializers (Previnem crash no mount se localStorage estiver corrompido)
+  const [stars, setStars] = useState<number>(() => safeIntInit('avf_stars', 100));
+  const [poeiraCoins, setPoeiraCoins] = useState<number>(() => safeIntInit('avf_poeiracoins', 0));
+  const [ownedItems, setOwnedItems] = useState<number[]>(() => safeJsonInit('avf_owned_items', []));
+  const [upgradeLevels, setUpgradeLevels] = useState<UpgradeState>(() => safeJsonInit('avf_upgrades', { BASIC: 1, TURBO: 1, ROBOT: 1, ENERGY: 1, MEGA: 1 }));
+  
+  // Equip items init needs specific logic
   const [equippedItems, setEquippedItems] = useState<EquippedItems>(() => {
-    const saved = localStorage.getItem('avf_equipped_items');
-    if (saved) {
-        try {
-            const parsed = JSON.parse(saved);
-            return {
-                SKINS: parsed.SKINS || null,
-                EFEITOS: parsed.EFEITOS || null,
-                MUSIC: parsed.MUSIC || (parsed.EXTRAS === 10 ? 10 : null),
-                BACKGROUND: parsed.BACKGROUND || (parsed.EXTRAS === 11 ? 11 : null),
-                CURSOR: parsed.CURSOR || (parsed.EXTRAS === 12 ? 12 : null)
-            };
-        } catch (e) {
-            return { SKINS: null, EFEITOS: null, MUSIC: null, BACKGROUND: null, CURSOR: null };
-        }
-    }
+    try {
+        const saved = localStorage.getItem('avf_equipped_items');
+        if (saved) return JSON.parse(saved);
+    } catch (e) { console.warn(e); }
     return { SKINS: null, EFEITOS: null, MUSIC: null, BACKGROUND: null, CURSOR: null };
   });
 
-  // Níveis dos Aspiradores
-  const [upgradeLevels, setUpgradeLevels] = useState<UpgradeState>(() => {
+  // --- FUNÇÃO DE BOOT UNIFICADA ---
+  const startAspiradoresVsFantasmas = async () => {
     try {
-        const saved = localStorage.getItem('avf_upgrades');
-        return saved ? JSON.parse(saved) : {
-            BASIC: 1, TURBO: 1, ROBOT: 1, ENERGY: 1, MEGA: 1
-        };
-    } catch {
-        return { BASIC: 1, TURBO: 1, ROBOT: 1, ENERGY: 1, MEGA: 1 };
+        if(window.reportBootStep) window.reportBootStep('React: Start Boot', 'PENDING');
+
+        // 1. Verificar Assets Essenciais (Simulado, pois são SVGs inline)
+        if(window.reportBootStep) window.reportBootStep('Assets Check', 'PENDING');
+        // Apenas garantimos que as constantes carregaram
+        if (!Constants.TOWER_TYPES || !Constants.LEVELS) {
+            throw new Error("Critical Game Constants Missing");
+        }
+        if(window.reportBootStep) window.reportBootStep('Assets Check', 'OK');
+
+        // 2. Configurar Estado Inicial
+        if(window.reportBootStep) window.reportBootStep('State Init', 'OK');
+
+        // 3. Simular "Network" Check (Não bloqueante)
+        // Mesmo que falhe, não para o jogo.
+        const networkCheck = new Promise((resolve) => setTimeout(resolve, 500));
+        networkCheck.then(() => {
+            if(window.reportBootStep) window.reportBootStep('Network (Background)', 'OK');
+        });
+
+        // 4. Finalizar
+        console.log("[BOOT] Cena inicial pronta, removendo loading.");
+        if(window.reportBootStep) window.reportBootStep('Boot Sequence', 'OK');
+        
+        // Chama a função global para remover o HTML overlay
+        if (window.finishLoading) window.finishLoading();
+
+    } catch (e: any) {
+        console.error("[BOOT] Erro ao iniciar o jogo:", e);
+        if(window.reportBootStep) window.reportBootStep('Boot Error: ' + e.message, 'ERROR');
+        // Mesmo com erro, tentamos liberar a tela para mostrar o ErrorBoundary ou menu
+        if (window.finishLoading) window.finishLoading();
     }
-  });
+  };
 
-  // Verificação de Integridade
   useEffect(() => {
-    setEquippedItems(prev => {
-        const next = { ...prev };
-        let changed = false;
-        if (next.SKINS && !ownedItems.includes(next.SKINS)) { next.SKINS = null; changed = true; }
-        if (next.EFEITOS && !ownedItems.includes(next.EFEITOS)) { next.EFEITOS = null; changed = true; }
-        if (next.MUSIC && !ownedItems.includes(next.MUSIC)) { next.MUSIC = null; changed = true; }
-        if (next.BACKGROUND && !ownedItems.includes(next.BACKGROUND)) { next.BACKGROUND = null; changed = true; }
-        if (next.CURSOR && !ownedItems.includes(next.CURSOR)) { next.CURSOR = null; changed = true; }
-        return changed ? next : prev;
-    });
-  }, [ownedItems]);
+      // Chama o boot ao montar o componente
+      startAspiradoresVsFantasmas();
+  }, []);
 
+  // --- Effects de Persistência ---
   useEffect(() => { localStorage.setItem('avf_stars', stars.toString()); }, [stars]);
   useEffect(() => { localStorage.setItem('avf_poeiracoins', poeiraCoins.toString()); }, [poeiraCoins]);
   useEffect(() => { localStorage.setItem('avf_owned_items', JSON.stringify(ownedItems)); }, [ownedItems]);
   useEffect(() => { localStorage.setItem('avf_equipped_items', JSON.stringify(equippedItems)); }, [equippedItems]);
   useEffect(() => { localStorage.setItem('avf_upgrades', JSON.stringify(upgradeLevels)); }, [upgradeLevels]);
 
-  const handleLevelComplete = (lives: number, maxLives: number) => {
-      // Recompensa baseada na performance
-      let starReward = 10; 
-      if (lives === maxLives) starReward = 30; // 3 estrelas
-      else if (lives >= maxLives / 2) starReward = 20; // 2 estrelas
+  // Integridade do Equipamento
+  useEffect(() => {
+    setEquippedItems(prev => {
+        const next = { ...prev };
+        let changed = false;
+        // Se o item não está mais nos ownedItems (raro, mas possível em updates), desequipa
+        (['SKINS', 'EFEITOS', 'MUSIC', 'BACKGROUND', 'CURSOR'] as const).forEach(key => {
+            const id = next[key];
+            if (id && !ownedItems.includes(id)) {
+                next[key] = null;
+                changed = true;
+            }
+        });
+        return changed ? next : prev;
+    });
+  }, [ownedItems]);
 
-      // Bônus da fase
+  // --- Handlers do Jogo ---
+
+  const handleLevelComplete = (lives: number, maxLives: number) => {
+      let starReward = 10; 
+      if (lives === maxLives) starReward = 30; 
+      else if (lives >= maxLives / 2) starReward = 20;
+
       const levelBonus = selectedLevelId * 5;
       const totalStars = starReward + levelBonus;
       
       setStars(prev => prev + totalStars);
-      
-      // Pequena chance de ganhar PoeiraCoin jogando
       if (Math.random() > 0.7) setPoeiraCoins(prev => prev + 1);
-
       return totalStars;
   };
 
@@ -140,7 +132,6 @@ const App: React.FC = () => {
   const handlePurchaseUpgrade = (type: TowerType) => {
       const currentLevel = upgradeLevels[type];
       if (currentLevel >= 3) return false;
-
       const nextLevel = (currentLevel + 1) as 2 | 3;
       const cost = Constants.UPGRADE_COSTS[nextLevel];
 
@@ -164,10 +155,7 @@ const App: React.FC = () => {
               setPoeiraCoins(prev => prev - cost);
               if (!isConsumable) {
                   setOwnedItems(prev => [...prev, id]);
-                  // Auto-equip if category provided
-                  if (categoryToEquip) {
-                      handleEquipItem(categoryToEquip, id);
-                  }
+                  if (categoryToEquip) handleEquipItem(categoryToEquip, id);
               }
               return true;
           }
@@ -199,35 +187,18 @@ const App: React.FC = () => {
       return true;
   };
 
-  const handleWatchAd = () => {
-      setPoeiraCoins(prev => prev + 5);
-  };
+  const handleWatchAd = () => setPoeiraCoins(prev => prev + 5);
 
   return (
     <div className={`w-full h-full bg-slate-900 text-white ${equippedItems.CURSOR === 12 ? 'cursor-none' : ''}`}>
       {equippedItems.CURSOR === 12 && (
           <div className="fixed pointer-events-none z-[9999]" 
-               style={{ 
-                   left: 0, top: 0, 
-                   transform: 'translate(var(--cursor-x), var(--cursor-y))',
-                   width: '32px', height: '32px'
-               }}
-               ref={(el) => {
-                   if(el) {
-                       window.addEventListener('mousemove', (e) => {
-                           el.style.setProperty('--cursor-x', `${e.clientX}px`);
-                           el.style.setProperty('--cursor-y', `${e.clientY}px`);
-                       });
-                   }
-               }}
-          >
-              🧹
-          </div>
+               style={{ left: 0, top: 0, transform: 'translate(var(--cursor-x), var(--cursor-y))', width: '32px', height: '32px' }}
+               ref={(el) => { if(el) window.addEventListener('mousemove', (e) => { el.style.setProperty('--cursor-x', `${e.clientX}px`); el.style.setProperty('--cursor-y', `${e.clientY}px`); }); }}
+          >🧹</div>
       )}
 
-      {currentScene === 'MENU_PRINCIPAL' && (
-        <MainMenu onNavigate={setCurrentScene} />
-      )}
+      {currentScene === 'MENU_PRINCIPAL' && <MainMenu onNavigate={setCurrentScene} />}
       
       {currentScene === 'GAME' && (
         <GameScene 
@@ -270,11 +241,24 @@ const App: React.FC = () => {
         />
       )}
 
-      {currentScene === 'OPCOES' && (
-          <Options onBack={() => setCurrentScene('MENU_PRINCIPAL')} />
-      )}
+      {currentScene === 'OPCOES' && <Options onBack={() => setCurrentScene('MENU_PRINCIPAL')} />}
     </div>
   );
 };
+
+// --- Helpers de Inicialização Segura ---
+function safeIntInit(key: string, defaultVal: number): number {
+    try {
+        const item = localStorage.getItem(key);
+        return item ? parseInt(item, 10) : defaultVal;
+    } catch { return defaultVal; }
+}
+
+function safeJsonInit(key: string, defaultVal: any): any {
+    try {
+        const item = localStorage.getItem(key);
+        return item ? JSON.parse(item) : defaultVal;
+    } catch { return defaultVal; }
+}
 
 export default App;
