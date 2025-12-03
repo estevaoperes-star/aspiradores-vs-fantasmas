@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Zap, Heart, Pause, ArrowLeft, Trash2, Play, PartyPopper, Skull } from 'lucide-react';
 import { GameStatus, Ghost as GhostType, Tower, Projectile, Particle, TowerType, UpgradeState, EquippedItems } from '../types';
@@ -13,24 +14,28 @@ interface GameSceneProps {
 }
 
 export const GameScene: React.FC<GameSceneProps> = ({ levelId, onBackToMenu, upgradeLevels, equippedItems, onLevelComplete, onNextLevel }) => {
+  // --- Game Config ---
+  const levelConfig = Constants.LEVELS.find(l => l.id === levelId) || Constants.LEVELS[0];
+
   // --- Game State ---
   const [status, setStatus] = useState<GameStatus>('PLAYING');
   const [energy, setEnergy] = useState(Constants.INITIAL_ENERGY);
   const [lives, setLives] = useState(Constants.INITIAL_LIVES);
   const [ghostsDefeated, setGhostsDefeated] = useState(0);
+  const [ghostsSpawned, setGhostsSpawned] = useState(0);
   const [selectedTowerType, setSelectedTowerType] = useState<TowerType>('BASIC');
   const [isRemoving, setIsRemoving] = useState(false);
   const [isPaused, setIsPaused] = useState(false);
   const [showVictory, setShowVictory] = useState(false);
   const [showDefeat, setShowDefeat] = useState(false);
   
-  // Entities Refs (Mutable for Performance in Game Loop)
+  // Entities Refs
   const towersRef = useRef<Tower[]>([]);
   const ghostsRef = useRef<GhostType[]>([]);
   const projectilesRef = useRef<Projectile[]>([]);
   const particlesRef = useRef<Particle[]>([]);
   
-  // State for Rendering (Synced with Refs)
+  // State for Rendering
   const [renderTrigger, setRenderTrigger] = useState(0);
 
   // Loop Control
@@ -54,10 +59,8 @@ export const GameScene: React.FC<GameSceneProps> = ({ levelId, onBackToMenu, upg
     };
   }, [levelId]);
 
-  // Controle da Música baseado no estado do jogo
   useEffect(() => {
       if (status === 'PLAYING' && !isPaused) {
-          // Tenta iniciar se o contexto já estiver permitido
           if (audioContextRef.current && audioContextRef.current.state === 'running') {
               startMusic();
           }
@@ -74,6 +77,7 @@ export const GameScene: React.FC<GameSceneProps> = ({ levelId, onBackToMenu, upg
     setEnergy(Constants.INITIAL_ENERGY);
     setLives(Constants.INITIAL_LIVES);
     setGhostsDefeated(0);
+    setGhostsSpawned(0);
     
     // Reset Entities
     towersRef.current = [];
@@ -89,7 +93,6 @@ export const GameScene: React.FC<GameSceneProps> = ({ levelId, onBackToMenu, upg
     // Start Loop
     requestRef.current = requestAnimationFrame(loop);
     
-    // Tenta iniciar música
     initAudio(); 
   };
 
@@ -229,19 +232,24 @@ export const GameScene: React.FC<GameSceneProps> = ({ levelId, onBackToMenu, upg
         setRenderTrigger(prev => prev + 1);
         requestRef.current = requestAnimationFrame(loop);
     } catch (e) { console.error("Loop Error", e); }
-  }, [status, isPaused]);
+  }, [status, isPaused, ghostsSpawned, ghostsDefeated]);
 
   const updateGameLogic = (dt: number, time: number) => {
+      // 1. Passive Energy
       if (time - lastEnergyTickRef.current > Constants.PASSIVE_ENERGY_TICK_MS) {
           setEnergy(e => Math.min(e + Constants.PASSIVE_ENERGY_AMOUNT, 9999));
           lastEnergyTickRef.current = time;
       }
+
+      // 2. Spawn Ghosts
       spawnTimerRef.current += dt;
-      let spawnRate = Constants.GHOST_SPAWN_RATE_MS / (1 + (levelId * 0.2)); 
-      if (spawnTimerRef.current > spawnRate && ghostsRef.current.length < 50 && ghostsDefeated < Constants.TOTAL_GHOSTS_TO_WIN) {
+      // Use level specific spawn rate
+      if (spawnTimerRef.current > levelConfig.spawnRateMs && ghostsRef.current.length < 50 && ghostsSpawned < levelConfig.totalGhosts) {
           spawnGhost();
           spawnTimerRef.current = 0;
       }
+
+      // 3. Update Towers
       towersRef.current.forEach(tower => {
           const stats = Constants.getTowerStats(tower.type, tower.level);
           if (tower.type === 'ENERGY') {
@@ -297,20 +305,32 @@ export const GameScene: React.FC<GameSceneProps> = ({ levelId, onBackToMenu, upg
       }
       particlesRef.current.forEach(p => { p.life -= dt; p.x += (p.vx || 0); p.y += (p.vy || 0); });
       particlesRef.current = particlesRef.current.filter(p => p.life > 0);
-      if (ghostsDefeated >= Constants.TOTAL_GHOSTS_TO_WIN && ghostsRef.current.length === 0) handleVictory();
+      
+      // WIN CONDITION
+      if (ghostsDefeated >= levelConfig.totalGhosts && ghostsRef.current.length === 0) handleVictory();
   };
 
   // --- ACTIONS ---
   const spawnGhost = () => {
       const row = Math.floor(Math.random() * Constants.GRID_ROWS);
-      const types: GhostType['type'][] = ['TRAVESSO', 'MEDROSO', 'SONOLENTO', 'POEIRA'];
-      const maxIndex = Math.min(types.length - 1, Math.max(0, levelId - 1)); 
-      const typeKey = types[Math.floor(Math.random() * (maxIndex + 1))];
+      
+      // Select random type from Allowed List for this level
+      const allowedTypes = levelConfig.allowedGhosts;
+      const typeKey = allowedTypes[Math.floor(Math.random() * allowedTypes.length)];
+      
       const config = Constants.GHOST_VARIANTS[typeKey];
+      
       ghostsRef.current.push({
-          id: Math.random().toString(36), row, x: 100, type: typeKey as any,
-          speed: config.speed * (1 + (levelId * 0.1)), hp: config.hp * (1 + (levelId * 0.1)), maxHp: config.hp * (1 + (levelId * 0.1)),
+          id: Math.random().toString(36), 
+          row, 
+          x: 100, 
+          type: typeKey as any,
+          // Apply Level Multipliers
+          speed: config.speed * levelConfig.speedMultiplier, 
+          hp: config.hp * levelConfig.hpMultiplier, 
+          maxHp: config.hp * levelConfig.hpMultiplier,
       });
+      setGhostsSpawned(prev => prev + 1);
   };
 
   const fireProjectile = (tower: Tower, damage: number, knockback: number) => {
@@ -399,7 +419,7 @@ export const GameScene: React.FC<GameSceneProps> = ({ levelId, onBackToMenu, upg
 
         <div className="flex items-center space-x-2 md:space-x-4">
             <div className="text-[10px] md:text-xs font-bold uppercase tracking-wider text-slate-400">
-                Fantasmas: <span className="text-white text-sm md:text-base ml-1">{ghostsDefeated} / {Constants.TOTAL_GHOSTS_TO_WIN}</span>
+                Fantasmas: <span className="text-white text-sm md:text-base ml-1">{ghostsDefeated} / {levelConfig.totalGhosts}</span>
             </div>
             
             <button 

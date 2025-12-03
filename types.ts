@@ -72,3 +72,14 @@ export interface Particle {
   size?: number;
   text?: string;
 }
+
+// Configuração de Dificuldade por Nível
+export interface LevelConfig {
+  id: number;
+  difficulty: string;
+  totalGhosts: number;       // Quantos fantasmas para vencer
+  spawnRateMs: number;       // Frequência de aparição
+  allowedGhosts: GhostType[]; // Quais tipos aparecem nesta fase
+  hpMultiplier: number;      // Multiplicador de vida dos inimigos
+  speedMultiplier: number;   // Multiplicador de velocidade
+}

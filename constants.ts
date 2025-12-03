@@ -1,5 +1,5 @@
 
-import { TowerType, GhostType } from "./types";
+import { TowerType, GhostType, LevelConfig } from "./types";
 
 export const GRID_ROWS = 5;
 export const GRID_COLS = 9;
@@ -8,7 +8,6 @@ export const CELL_WIDTH_PERCENT = 100 / GRID_COLS; // ~11.11%
 export const INITIAL_ENERGY = 50;
 export const INITIAL_LIVES = 3;
 
-export const GHOST_SPAWN_RATE_MS = 2500;
 export const ENERGY_PER_KILL = 15;
 export const PASSIVE_ENERGY_TICK_MS = 2000;
 export const PASSIVE_ENERGY_AMOUNT = 5;
@@ -18,9 +17,6 @@ export const PROJECTILE_HITBOX_W = 3; // % width
 export const ROBOT_HITBOX_W = 6; // % width (Physical body)
 export const GHOST_HITBOX_W = 6; // % width
 export const ROBOT_PUSH_FORCE = 0.05; // How much robot pushes ghost per frame
-
-// Winning condition
-export const TOTAL_GHOSTS_TO_WIN = 20;
 
 // Configuração de Preços de Upgrade (Global)
 export const UPGRADE_COSTS = {
@@ -36,7 +32,6 @@ const toBase64 = (str: string) => {
         ));
     } catch (e) {
         console.error("SVG Encoding Failed:", e);
-        // Retorna um quadrado magenta de erro se falhar a conversão
         return window.btoa('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><rect width="100" height="100" fill="#FF00FF"/></svg>');
     }
 };
@@ -153,19 +148,61 @@ const svgGhostMedroso = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10
 const svgGhostSonolento = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><path d="M20 90 Q20 30 50 30 Q80 30 80 90" fill="#6ee7b7"/><path d="M30 50 L50 50" stroke="#000"/><path d="M60 50 L80 50" stroke="#000"/></svg>`;
 const svgGhostPoeira = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><circle cx="50" cy="50" r="40" fill="#d6d3d1"/><circle cx="35" cy="45" r="3"/><circle cx="65" cy="45" r="3"/></svg>`;
 
+// STATS BALANCEADOS
 export const GHOST_VARIANTS: Record<string, { name: string; speed: number; hp: number; image: string }> = {
-    'TRAVESSO': { name: 'Travesso', speed: 0.06, hp: 50, image: createSvgUrl(svgGhostTravesso) },
-    'MEDROSO': { name: 'Medroso', speed: 0.1, hp: 30, image: createSvgUrl(svgGhostMedroso) },
-    'SONOLENTO': { name: 'Sonolento', speed: 0.03, hp: 100, image: createSvgUrl(svgGhostSonolento) },
-    'POEIRA': { name: 'Rei Poeira', speed: 0.05, hp: 60, image: createSvgUrl(svgGhostPoeira) }
+    'TRAVESSO': { name: 'Travesso', speed: 0.05, hp: 50, image: createSvgUrl(svgGhostTravesso) }, // Padrão
+    'MEDROSO': { name: 'Medroso', speed: 0.12, hp: 25, image: createSvgUrl(svgGhostMedroso) },  // Rápido, fraco
+    'SONOLENTO': { name: 'Sonolento', speed: 0.02, hp: 150, image: createSvgUrl(svgGhostSonolento) }, // Tanque, lento
+    'POEIRA': { name: 'Rei Poeira', speed: 0.04, hp: 300, image: createSvgUrl(svgGhostPoeira) } // Chefe
 };
 
-export const LEVELS = [
-    { id: 1, difficulty: 'Fácil' },
-    { id: 2, difficulty: 'Médio' },
-    { id: 3, difficulty: 'Difícil' },
-    { id: 4, difficulty: 'Muito Difícil' },
-    { id: 5, difficulty: 'Pesadelo' }
+// PROGRESSÃO DE NÍVEIS
+export const LEVELS: LevelConfig[] = [
+    { 
+        id: 1, 
+        difficulty: 'Fácil',
+        totalGhosts: 15,
+        spawnRateMs: 3000,
+        allowedGhosts: ['TRAVESSO'],
+        hpMultiplier: 1.0,
+        speedMultiplier: 1.0
+    },
+    { 
+        id: 2, 
+        difficulty: 'Médio',
+        totalGhosts: 25,
+        spawnRateMs: 2500,
+        allowedGhosts: ['TRAVESSO', 'MEDROSO'],
+        hpMultiplier: 1.2,
+        speedMultiplier: 1.1
+    },
+    { 
+        id: 3, 
+        difficulty: 'Difícil',
+        totalGhosts: 35,
+        spawnRateMs: 2000,
+        allowedGhosts: ['TRAVESSO', 'MEDROSO', 'SONOLENTO'],
+        hpMultiplier: 1.5,
+        speedMultiplier: 1.2
+    },
+    { 
+        id: 4, 
+        difficulty: 'Muito Difícil',
+        totalGhosts: 45,
+        spawnRateMs: 1500,
+        allowedGhosts: ['TRAVESSO', 'MEDROSO', 'SONOLENTO', 'POEIRA'],
+        hpMultiplier: 1.8,
+        speedMultiplier: 1.3
+    },
+    { 
+        id: 5, 
+        difficulty: 'Pesadelo',
+        totalGhosts: 60,
+        spawnRateMs: 1000,
+        allowedGhosts: ['TRAVESSO', 'MEDROSO', 'SONOLENTO', 'POEIRA'],
+        hpMultiplier: 2.5,
+        speedMultiplier: 1.5
+    }
 ];
 
 export const getTowerStats = (type: TowerType, level: number) => {
