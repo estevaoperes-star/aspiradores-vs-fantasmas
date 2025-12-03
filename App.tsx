@@ -9,21 +9,9 @@ import { SceneName, UpgradeState, TowerType, EquippedItems, StoreCategory } from
 import * as Constants from './constants';
 
 const App: React.FC = () => {
-  // --- TESTE DE BUILD & REMOÇÃO DE LOADING SCREEN ---
+  // Debug de Inicialização
   useEffect(() => {
-      const initBuild = () => {
-          console.log("%c[SYSTEM] Game initializing...", "color: cyan;");
-          
-          // Remove a tela de carregamento do HTML nativo
-          const loader = document.getElementById('loading-overlay');
-          if (loader) {
-              loader.style.opacity = '0';
-              setTimeout(() => loader.remove(), 500);
-          }
-      };
-
-      // Executa um tick depois para garantir render
-      setTimeout(initBuild, 100);
+      console.log("%c[SYSTEM] App Component Mounted Successfully", "color: lime; font-weight:bold");
   }, []);
 
   // --- Global Persistence State ---
@@ -54,7 +42,7 @@ const App: React.FC = () => {
     } catch { return []; }
   });
 
-  // Itens Equipados (Com migração de dados antigos se necessário)
+  // Itens Equipados
   const [equippedItems, setEquippedItems] = useState<EquippedItems>(() => {
     const saved = localStorage.getItem('avf_equipped_items');
     if (saved) {
