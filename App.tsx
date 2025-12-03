@@ -9,9 +9,13 @@ import { SceneName, UpgradeState, TowerType, EquippedItems, StoreCategory } from
 import * as Constants from './constants';
 
 const App: React.FC = () => {
-  // Debug de Inicialização
+  // Garantia de remoção do loader caso index.tsx falhe
   useEffect(() => {
-      console.log("%c[SYSTEM] App Component Mounted Successfully", "color: lime; font-weight:bold");
+      const loader = document.getElementById('loading-overlay');
+      if (loader) {
+          loader.style.opacity = '0';
+          setTimeout(() => loader.style.display = 'none', 500);
+      }
   }, []);
 
   // --- Global Persistence State ---
@@ -216,7 +220,7 @@ const App: React.FC = () => {
     >
       <div 
         className="w-full h-full max-w-[1200px] max-h-[600px] aspect-video relative shadow-2xl overflow-hidden bg-slate-800 border-4 border-slate-700"
-        style={{ minWidth: '320px', minHeight: '180px' }} // Fallback size
+        style={{ minWidth: '320px', minHeight: '180px' }}
       >
         {renderScene()}
       </div>

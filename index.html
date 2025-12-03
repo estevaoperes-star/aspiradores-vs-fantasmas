@@ -15,17 +15,18 @@
         overflow: hidden;
         background-color: #0f172a;
         touch-action: none;
+        font-family: sans-serif;
       }
       #root {
         width: 100%;
         height: 100%;
-        display: flex;
-        justify-content: center;
-        align-items: center;
         position: absolute;
         top: 0;
         left: 0;
-        z-index: 1; /* React fica abaixo do loader até ele sumir */
+        z-index: 1;
+        display: flex;
+        justify-content: center;
+        align-items: center;
       }
       #loading-overlay {
         position: fixed;
@@ -36,8 +37,7 @@
         flex-direction: column;
         align-items: center;
         justify-content: center;
-        z-index: 9999; /* Garante que fique no topo */
-        font-family: sans-serif;
+        z-index: 9999;
         transition: opacity 0.5s ease;
       }
       .spinner {
@@ -50,31 +50,56 @@
         margin-bottom: 20px;
       }
       @keyframes spin { to { transform: rotate(360deg); } }
-      .hidden-force {
-          display: none !important;
+      .error-msg {
+          color: #ef4444;
+          background: rgba(0,0,0,0.8);
+          padding: 20px;
+          border-radius: 8px;
+          max-width: 80%;
+          text-align: center;
+          font-family: monospace;
+          font-size: 12px;
       }
     </style>
     <script>
-      // 1. Error Handler Global
-      window.handleGlobalErrors = function(msg, url, line, col, error) {
-        console.error("GLOBAL ERROR:", msg, error);
-        const loader = document.getElementById('loading-overlay');
-        if(loader) {
-            loader.innerHTML = '<div style="color:#ef4444; padding:20px; text-align:center; font-family:sans-serif;"><h2>Erro na Inicialização</h2><p style="font-size:12px; opacity:0.8">'+msg+'</p><button onclick="window.location.reload()" style="margin-top:15px; padding:8px 16px; border-radius:4px; border:none; background:white; color:black; font-weight:bold; cursor:pointer;">Tentar Novamente</button></div>';
-        }
+      // 1. Sistema de Reporte de Erros
+      function showError(title, detail) {
+          const loader = document.getElementById('loading-overlay');
+          if(loader) {
+              loader.innerHTML = '<div class="error-msg"><h2>'+title+'</h2><p>'+detail+'</p><button onclick="window.location.reload()" style="margin-top:10px;padding:8px;background:white;color:black;border:none;cursor:pointer;">Recarregar</button></div>';
+          }
+      }
+
+      window.onerror = function(msg, url, line, col, error) {
+        console.error("GLOBAL ERROR:", msg);
+        showError("Erro Crítico", msg);
         return false;
       };
-      window.onerror = window.handleGlobalErrors;
 
-      // 2. Safety Timeout: Se o React não carregar em 8 segundos, remove o loader na força bruta
+      window.onunhandledrejection = function(event) {
+          console.error("UNHANDLED PROMISE:", event.reason);
+          showError("Falha no Carregamento", "Não foi possível carregar os módulos do jogo.<br>" + event.reason);
+      };
+
+      // 2. Timeout de Segurança Agressivo (3.5s)
       setTimeout(() => {
           const loader = document.getElementById('loading-overlay');
-          if (loader && !loader.classList.contains('hidden-force')) {
-              console.warn("React taking too long. Forcing loader removal.");
-              loader.style.opacity = '0';
-              setTimeout(() => loader.style.display = 'none', 500);
+          const root = document.getElementById('root');
+          
+          if (loader && loader.style.display !== 'none') {
+              // Se o root estiver vazio, provavelmente falhou silenciosamente
+              if (!root || root.childElementCount === 0) {
+                  console.warn("Root is empty after timeout.");
+                  // Não removemos o loader, mostramos erro nele
+                  showError("Tempo Esgotado", "O jogo demorou muito para iniciar. Verifique sua conexão ou tente recarregar.");
+              } else {
+                  // Se o root tem coisa, só remove o loader
+                  console.log("Forcing loader removal (Safe Mode)");
+                  loader.style.opacity = '0';
+                  setTimeout(() => loader.style.display = 'none', 500);
+              }
           }
-      }, 8000);
+      }, 3500);
     </script>
     <script type="importmap">
     {
@@ -90,7 +115,7 @@
   <body>
     <div id="loading-overlay">
         <div class="spinner"></div>
-        <p id="loading-text">Carregando Jogo...</p>
+        <p>Carregando...</p>
     </div>
     <div id="root"></div>
   </body>
