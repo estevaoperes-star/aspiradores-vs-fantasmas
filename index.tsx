@@ -2,6 +2,14 @@ import React, { Component, ErrorInfo, ReactNode } from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App';
 
+// Interface global
+declare global {
+    interface Window {
+        mountGame: () => void;
+        reportBootStep: (step: string, status: 'PENDING' | 'OK' | 'ERROR') => void;
+    }
+}
+
 // --- ERROR BOUNDARY ---
 interface Props {
   children: ReactNode;
@@ -24,16 +32,8 @@ class ErrorBoundary extends Component<Props, State> {
 
   componentDidCatch(error: Error, errorInfo: ErrorInfo) {
     console.error("React Error Boundary caught:", error, errorInfo);
-    
-    // Reportar ao Painel de Debug Visual
     if (window.reportBootStep) {
-        window.reportBootStep("CRASH: " + error.message.substring(0, 25), "ERROR");
-    }
-
-    // Forçar remoção do loader para mostrar o erro
-    const loader = document.getElementById('loading-overlay');
-    if (loader) {
-        loader.style.display = 'none';
+        window.reportBootStep("CRASH: " + error.message.substring(0, 20), "ERROR");
     }
   }
 
@@ -41,47 +41,53 @@ class ErrorBoundary extends Component<Props, State> {
     if (this.state.hasError) {
       return (
         <div className="flex flex-col items-center justify-center h-screen bg-slate-900 text-white p-8 font-sans z-[10000] relative">
-          <div className="bg-red-900/20 p-6 rounded-xl border-2 border-red-500 max-w-2xl w-full text-center">
-            <h1 className="text-2xl font-bold text-red-500 mb-2">Erro Fatal</h1>
-            <p className="text-gray-300 mb-4">O jogo não conseguiu iniciar.</p>
-            <div className="bg-black p-4 rounded border border-gray-700 overflow-auto text-xs font-mono text-red-300 mb-4 max-h-64 text-left">
-               {this.state.error?.toString() || "Erro desconhecido"}
-            </div>
-            <button 
-                onClick={() => {
-                    localStorage.clear();
-                    window.location.reload();
-                }} 
-                className="px-6 py-3 bg-red-600 hover:bg-red-500 rounded font-bold transition-colors text-white uppercase tracking-widest"
-            >
-                Resetar Dados e Recarregar
-            </button>
-          </div>
+           <h1 className="text-2xl font-bold text-red-500 mb-2">Erro Fatal de Renderização</h1>
+           <p>{this.state.error?.toString()}</p>
         </div>
       );
     }
-
     return this.props.children;
   }
 }
 
-// 1. Checkpoint Pre-Render
-const rootElement = document.getElementById('root');
-if (!rootElement) {
-    throw new Error("Could not find root element to mount to");
-}
+// --- FUNÇÃO DE MONTAGEM GLOBAL ---
+let root: ReactDOM.Root | null = null;
 
-if(window.reportBootStep) window.reportBootStep('ReactDOM Init', 'PENDING');
+window.mountGame = () => {
+    try {
+        if (window.reportBootStep) window.reportBootStep('Mount Game Triggered', 'OK');
+        
+        const rootElement = document.getElementById('root');
+        if (!rootElement) {
+            if (window.reportBootStep) window.reportBootStep('Root Element Missing', 'ERROR');
+            return;
+        }
 
-const root = ReactDOM.createRoot(rootElement);
+        if (root) {
+            // Já montado, não faz nada ou força update
+             if (window.reportBootStep) window.reportBootStep('React Already Mounted', 'OK');
+             return;
+        }
 
-root.render(
-  <React.StrictMode>
-    <ErrorBoundary>
-      <App />
-    </ErrorBoundary>
-  </React.StrictMode>
-);
+        if (window.reportBootStep) window.reportBootStep('Creating React Root', 'PENDING');
+        root = ReactDOM.createRoot(rootElement);
+        
+        root.render(
+          <React.StrictMode>
+            <ErrorBoundary>
+              <App />
+            </ErrorBoundary>
+          </React.StrictMode>
+        );
 
-// 2. Checkpoint Post-Render (Sync)
-if(window.reportBootStep) window.reportBootStep('ReactDOM Render Triggered', 'OK');
+        if (window.reportBootStep) window.reportBootStep('React Render Call', 'OK');
+
+    } catch (e: any) {
+        console.error("Mount Error:", e);
+        if (window.reportBootStep) window.reportBootStep('Mount Exception: ' + e.message, 'ERROR');
+    }
+};
+
+// Tenta montar automaticamente ao carregar o script
+if (window.reportBootStep) window.reportBootStep('Index Script Loaded', 'OK');
+window.mountGame();

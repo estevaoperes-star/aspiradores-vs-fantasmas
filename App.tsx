@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useLayoutEffect } from 'react';
 import { GameScene } from './components/GameScene';
 import { MainMenu } from './components/MainMenu';
 import { LevelSelect } from './components/LevelSelect';
@@ -8,7 +8,6 @@ import { Options } from './components/Options';
 import { SceneName, UpgradeState, TowerType, EquippedItems, StoreCategory } from './types';
 import * as Constants from './constants';
 
-// Interface global para o Debug
 declare global {
     interface Window {
         DEBUG_VISUAL: boolean;
@@ -18,11 +17,11 @@ declare global {
 }
 
 const App: React.FC = () => {
-  // --- Global Persistence State ---
   const [currentScene, setCurrentScene] = useState<SceneName>('MENU_PRINCIPAL');
   const [selectedLevelId, setSelectedLevelId] = useState<number>(1);
+  const [isMounted, setIsMounted] = useState(false);
   
-  // Safe Initializers (Local Storage pode falhar em iframes/privacidade restrita)
+  // Safe Initializers
   const [stars, setStars] = useState<number>(() => safeIntInit('avf_stars', 100));
   const [poeiraCoins, setPoeiraCoins] = useState<number>(() => safeIntInit('avf_poeiracoins', 0));
   const [ownedItems, setOwnedItems] = useState<number[]>(() => safeJsonInit('avf_owned_items', []));
@@ -36,47 +35,31 @@ const App: React.FC = () => {
     return { SKINS: null, EFEITOS: null, MUSIC: null, BACKGROUND: null, CURSOR: null };
   });
 
-  // ======================================================
-  // 3) FUNÇÃO ÚNICA DE INICIALIZAÇÃO
-  // ======================================================
+  // Confirmação Visual de Montagem
+  useLayoutEffect(() => {
+      setIsMounted(true);
+      if(window.reportBootStep) window.reportBootStep('App Component Rendered', 'OK');
+  }, []);
+
   const startAspiradoresVsFantasmas = async () => {
     try {
-        if(window.reportBootStep) window.reportBootStep('React App Mount', 'OK');
-
         // ETAPA 1: Assets e Constantes
-        if(window.reportBootStep) window.reportBootStep('Load Basic Assets', 'PENDING');
         if (!Constants.TOWER_TYPES || !Constants.LEVELS) {
              throw new Error("Assets Críticos Ausentes");
         }
-        // Simular um micro-delay para permitir UI update (opcional, mas bom para debug visual)
-        await new Promise(r => setTimeout(r, 50));
-        if(window.reportBootStep) window.reportBootStep('Load Basic Assets', 'OK');
-
-        // ETAPA 2: Configurar HUD / Grid (Estado Inicial)
-        if(window.reportBootStep) window.reportBootStep('Setup Grid & HUD', 'PENDING');
-        // A lógica de estado já rodou nos hooks useState acima
-        if(window.reportBootStep) window.reportBootStep('Setup Grid & HUD', 'OK');
-
-        // ETAPA 3: Menu Principal (Scene 'MENU_PRINCIPAL' é default)
-        if(window.reportBootStep) window.reportBootStep('Init Main Menu', 'OK');
-
-        // ETAPA 4: Finalização
-        if(window.reportBootStep) window.reportBootStep('Boot Sequence', 'OK');
         
-        // Remover Overlay
+        // ETAPA FINAL
+        if(window.reportBootStep) window.reportBootStep('Boot Logic Finished', 'OK');
         if (window.finishLoading) window.finishLoading();
 
     } catch (e: any) {
         console.error("Boot Error:", e);
-        if(window.reportBootStep) window.reportBootStep('Boot Exception', 'ERROR');
-        
-        // Tentar recuperar mesmo com erro
+        if(window.reportBootStep) window.reportBootStep('Boot Logic Exception', 'ERROR');
         if (window.finishLoading) window.finishLoading();
     }
   };
 
   useEffect(() => {
-      // Inicia imediatamente ao montar
       startAspiradoresVsFantasmas();
   }, []);
 
@@ -103,16 +86,12 @@ const App: React.FC = () => {
     });
   }, [ownedItems]);
 
-  // --- Handlers do Jogo ---
-
   const handleLevelComplete = (lives: number, maxLives: number) => {
       let starReward = 10; 
       if (lives === maxLives) starReward = 30; 
       else if (lives >= maxLives / 2) starReward = 20;
-
       const levelBonus = selectedLevelId * 5;
       const totalStars = starReward + levelBonus;
-      
       setStars(prev => prev + totalStars);
       if (Math.random() > 0.7) setPoeiraCoins(prev => prev + 1);
       return totalStars;
@@ -133,7 +112,6 @@ const App: React.FC = () => {
       if (currentLevel >= 3) return false;
       const nextLevel = (currentLevel + 1) as 2 | 3;
       const cost = Constants.UPGRADE_COSTS[nextLevel];
-
       if (stars >= cost) {
           setStars(prev => prev - cost);
           setUpgradeLevels(prev => ({ ...prev, [type]: nextLevel }));
@@ -189,7 +167,14 @@ const App: React.FC = () => {
   const handleWatchAd = () => setPoeiraCoins(prev => prev + 5);
 
   return (
-    <div className={`w-full h-full bg-slate-900 text-white ${equippedItems.CURSOR === 12 ? 'cursor-none' : ''}`}>
+    <div className={`w-full h-full bg-slate-900 text-white relative z-0 ${equippedItems.CURSOR === 12 ? 'cursor-none' : ''}`}>
+      {/* Fallback de Renderização */}
+      {!isMounted && (
+        <div className="absolute inset-0 flex items-center justify-center bg-blue-900 z-50">
+            Renderizando Interface...
+        </div>
+      )}
+
       {equippedItems.CURSOR === 12 && (
           <div className="fixed pointer-events-none z-[9999]" 
                style={{ left: 0, top: 0, transform: 'translate(var(--cursor-x), var(--cursor-y))', width: '32px', height: '32px' }}
@@ -245,7 +230,6 @@ const App: React.FC = () => {
   );
 };
 
-// --- Helpers de Inicialização Segura (Try/Catch para evitar crash se LocalStorage estiver bloqueado) ---
 function safeIntInit(key: string, defaultVal: number): number {
     try {
         const item = localStorage.getItem(key);

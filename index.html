@@ -22,7 +22,8 @@
         height: 100%;
         position: absolute;
         top: 0; left: 0;
-        z-index: 1;
+        z-index: 10; /* Garante que fique acima do body */
+        display: block;
       }
       
       /* --- OVERLAY DE LOADING --- */
@@ -113,7 +114,7 @@
       // ======================================================
       // 1) CONFIGURAÇÃO GLOBAL
       // ======================================================
-      window.DEBUG_VISUAL = true; // ATIVADO PARA DIAGNÓSTICO
+      window.DEBUG_VISUAL = true;
       window.gameIsReady = false;
 
       // ======================================================
@@ -121,17 +122,13 @@
       // ======================================================
       window.reportBootStep = function(stepName, status) {
           if (!window.DEBUG_VISUAL) return;
-
           const panel = document.getElementById('visual-debug-panel');
           const list = document.getElementById('debug-steps-list');
           
           if (panel && list) {
               panel.style.display = 'block';
-              
-              // Verifica se já existe a linha
               const rowId = 'row-' + stepName.replace(/[^a-zA-Z0-9]/g, '');
               let row = document.getElementById(rowId);
-              
               if (!row) {
                   row = document.createElement('div');
                   row.id = rowId;
@@ -139,13 +136,10 @@
                   row.innerHTML = `<span class="step-name">${stepName}</span> <span class="status-badge status-pending">PENDENTE</span>`;
                   list.appendChild(row);
               }
-
-              // Atualiza status
               const badge = row.querySelector('.status-badge');
               badge.className = `status-badge status-${status.toLowerCase()}`;
               badge.innerText = status;
           }
-
           console.log(`[BOOT] ${stepName}: ${status}`);
       };
 
@@ -172,7 +166,6 @@
       // ======================================================
       window.onerror = function(msg, url, line) {
           if (typeof msg === 'string' && msg.includes('ResizeObserver')) return false;
-          
           window.reportBootStep('Global JS Runtime', 'ERROR');
           const list = document.getElementById('debug-steps-list');
           if (list) {
@@ -183,14 +176,11 @@
               errDiv.innerText = `ERR: ${msg}`;
               list.appendChild(errDiv);
           }
-          
-          // Fallback: Tenta liberar a tela mesmo com erro
           setTimeout(() => {
               const btn = document.getElementById('debug-force-btn');
-              if(btn) btn.innerText = "ERRO DETECTADO - CLIQUE PARA FORÇAR";
+              if(btn) btn.innerText = "ERRO - TENTAR FORÇAR RENDER";
               btn.style.backgroundColor = "#dc2626";
           }, 500);
-          
           return false;
       };
 
@@ -200,27 +190,39 @@
       document.addEventListener("DOMContentLoaded", function() {
           window.reportBootStep('HTML DOM Loaded', 'OK');
 
-          // Botão de Forçar
+          // Lógica do Botão de Forçar
           document.getElementById('debug-force-btn').onclick = function() {
               window.reportBootStep('Force Start', 'TRIGGERED');
+              
+              // Tenta montar o jogo manualmente se a função existir
+              if (window.mountGame) {
+                  console.log("[BOOT] Chamando window.mountGame() manualmente...");
+                  try {
+                      window.mountGame();
+                  } catch(e) {
+                      window.reportBootStep('Manual Mount Failed', 'ERROR');
+                  }
+              } else {
+                  window.reportBootStep('Mount Fn Not Found', 'ERROR');
+              }
+              
+              // Remove overlay de qualquer jeito
               window.finishLoading();
           };
 
-          // Monitoramento Passivo do React
+          // Monitoramento Passivo
           const root = document.getElementById('root');
           let checks = 0;
           const interval = setInterval(() => {
               checks++;
               if (root && root.childElementCount > 0) {
-                  window.reportBootStep('React Mount Detected', 'OK');
+                  window.reportBootStep('Game Container Found', 'OK');
                   clearInterval(interval);
-                  // Pequeno delay para garantir pintura
                   setTimeout(window.finishLoading, 200);
               }
-              // Timeout de segurança (5s)
               if (checks > 20 && !window.gameIsReady) {
                   const status = document.getElementById('loading-status');
-                  if(status) status.innerText = "Demorando mais que o normal...";
+                  if(status) status.innerText = "Inicialização lenta. Aguarde ou use Forçar Início.";
               }
           }, 250);
       });
@@ -248,7 +250,7 @@
     <div id="visual-debug-panel">
         <h3>
             <span>🔧 DEBUG BOOT</span>
-            <span style="font-size:10px; opacity:0.7">v2.0</span>
+            <span style="font-size:10px; opacity:0.7">v2.1</span>
         </h3>
         <div id="debug-steps-list">
             <!-- Passos serão inseridos aqui via JS -->
