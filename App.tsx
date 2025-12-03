@@ -7,6 +7,7 @@ import { Store } from './components/Store';
 import { Options } from './components/Options';
 import { SceneName, UpgradeState, TowerType, EquippedItems, StoreCategory } from './types';
 import * as Constants from './constants';
+import { Smartphone, RotateCcw } from 'lucide-react';
 
 declare global {
     interface Window {
@@ -18,6 +19,7 @@ const App: React.FC = () => {
   const [currentScene, setCurrentScene] = useState<SceneName>('MENU_PRINCIPAL');
   const [selectedLevelId, setSelectedLevelId] = useState<number>(1);
   const [isMounted, setIsMounted] = useState(false);
+  const [isPortrait, setIsPortrait] = useState(false);
   
   // Safe Initializers
   const [stars, setStars] = useState<number>(() => safeIntInit('avf_stars', 100));
@@ -40,7 +42,20 @@ const App: React.FC = () => {
       setTimeout(() => {
           if (window.finishLoading) window.finishLoading();
       }, 100);
+      
+      checkOrientation();
+      window.addEventListener('resize', checkOrientation);
+      return () => window.removeEventListener('resize', checkOrientation);
   }, []);
+
+  const checkOrientation = () => {
+      // Considera portrait se altura for maior que largura e largura for pequena (mobile)
+      if (window.innerHeight > window.innerWidth && window.innerWidth < 768) {
+          setIsPortrait(true);
+      } else {
+          setIsPortrait(false);
+      }
+  };
 
   // --- Effects de Persistência ---
   useEffect(() => { safeSetItem('avf_stars', stars.toString()); }, [stars]);
@@ -146,11 +161,24 @@ const App: React.FC = () => {
   const handleWatchAd = () => setPoeiraCoins(prev => prev + 5);
 
   return (
-    <div className={`w-full h-full bg-slate-900 text-white relative z-0 ${equippedItems.CURSOR === 12 ? 'cursor-none' : ''}`}>
+    <div className={`w-full h-full bg-slate-900 text-white relative z-0 overflow-hidden ${equippedItems.CURSOR === 12 && !('ontouchstart' in window) ? 'cursor-none' : ''}`}>
       {/* Estado visual enquanto React hidrata/monta */}
       {!isMounted && <div className="absolute inset-0 bg-slate-900 z-50"></div>}
 
-      {equippedItems.CURSOR === 12 && (
+      {/* Portrait Warning Overlay */}
+      {isPortrait && (
+          <div className="absolute inset-0 z-[10000] bg-slate-900 flex flex-col items-center justify-center p-8 text-center animate-fade-in">
+              <div className="relative mb-8">
+                <Smartphone size={64} className="text-slate-400 animate-pulse" />
+                <RotateCcw size={32} className="absolute -right-4 -top-2 text-yellow-400 animate-spin-slow" />
+              </div>
+              <h2 className="text-2xl font-black text-white mb-2 uppercase">Gire seu dispositivo</h2>
+              <p className="text-slate-400 font-bold">O jogo foi projetado para ser jogado na horizontal (paisagem).</p>
+          </div>
+      )}
+
+      {/* Custom Cursor (Only for Mouse devices) */}
+      {equippedItems.CURSOR === 12 && !('ontouchstart' in window) && (
           <div className="fixed pointer-events-none z-[9999]" 
                style={{ left: 0, top: 0, transform: 'translate(var(--cursor-x), var(--cursor-y))', width: '32px', height: '32px' }}
                ref={(el) => { if(el) window.addEventListener('mousemove', (e) => { el.style.setProperty('--cursor-x', `${e.clientX}px`); el.style.setProperty('--cursor-y', `${e.clientY}px`); }); }}
@@ -201,6 +229,10 @@ const App: React.FC = () => {
       )}
 
       {currentScene === 'OPCOES' && <Options onBack={() => setCurrentScene('MENU_PRINCIPAL')} />}
+
+      <style>{`
+        .animate-spin-slow { animation: spin 3s linear infinite; }
+      `}</style>
     </div>
   );
 };

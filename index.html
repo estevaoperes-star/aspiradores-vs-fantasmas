@@ -2,7 +2,7 @@
 <html lang="pt-BR">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
     <title>Aspiradores vs Fantasmas</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
@@ -14,10 +14,11 @@
         padding: 0;
         overflow: hidden;
         background-color: #0f172a;
-        touch-action: none;
+        touch-action: none; /* Impede gestos de zoom/pan do navegador */
         font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-        user-select: none;
+        user-select: none; /* Impede seleção de texto */
         -webkit-user-select: none;
+        -webkit-tap-highlight-color: transparent; /* Remove highlight azul ao tocar */
       }
       
       #game-root {
@@ -29,6 +30,15 @@
         display: block;
       }
       
+      /* Ocultar Scrollbar mas permitir scroll */
+      .no-scrollbar::-webkit-scrollbar {
+          display: none;
+      }
+      .no-scrollbar {
+          -ms-overflow-style: none;
+          scrollbar-width: none;
+      }
+
       /* --- OVERLAY DE LOADING (Produção) --- */
       #loading-overlay {
         position: fixed;
