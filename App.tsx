@@ -9,13 +9,24 @@ import { SceneName, UpgradeState, TowerType, EquippedItems, StoreCategory } from
 import * as Constants from './constants';
 
 const App: React.FC = () => {
-  // Garantia de remoção do loader caso index.tsx falhe
+  // --- SEGURANÇA DE INICIALIZAÇÃO ---
+  // Sinaliza ao index.html que o React montou o App com sucesso.
   useEffect(() => {
-      const loader = document.getElementById('loading-overlay');
-      if (loader) {
-          loader.style.opacity = '0';
-          setTimeout(() => loader.style.display = 'none', 500);
-      }
+      console.log("[App] Componente App montado. Sinalizando fim do carregamento.");
+      // Pequeno delay para garantir que o render visual ocorreu
+      const timer = setTimeout(() => {
+          if ((window as any).finishLoading) {
+              (window as any).finishLoading();
+          } else {
+              // Fallback caso a função global não exista
+              const loader = document.getElementById('loading-overlay');
+              if (loader) { 
+                  loader.style.opacity = '0'; 
+                  setTimeout(() => loader.style.display = 'none', 500);
+              }
+          }
+      }, 100);
+      return () => clearTimeout(timer);
   }, []);
 
   // --- Global Persistence State ---
@@ -92,69 +103,72 @@ const App: React.FC = () => {
     });
   }, [ownedItems]);
 
-  useEffect(() => {
-    localStorage.setItem('avf_stars', stars.toString());
-    localStorage.setItem('avf_poeiracoins', poeiraCoins.toString());
-    localStorage.setItem('avf_upgrades', JSON.stringify(upgradeLevels));
-    localStorage.setItem('avf_owned_items', JSON.stringify(ownedItems));
-    localStorage.setItem('avf_equipped_items', JSON.stringify(equippedItems));
-  }, [stars, poeiraCoins, upgradeLevels, ownedItems, equippedItems]);
+  useEffect(() => { localStorage.setItem('avf_stars', stars.toString()); }, [stars]);
+  useEffect(() => { localStorage.setItem('avf_poeiracoins', poeiraCoins.toString()); }, [poeiraCoins]);
+  useEffect(() => { localStorage.setItem('avf_owned_items', JSON.stringify(ownedItems)); }, [ownedItems]);
+  useEffect(() => { localStorage.setItem('avf_equipped_items', JSON.stringify(equippedItems)); }, [equippedItems]);
+  useEffect(() => { localStorage.setItem('avf_upgrades', JSON.stringify(upgradeLevels)); }, [upgradeLevels]);
 
-  const navigateTo = (scene: SceneName) => {
-    setCurrentScene(scene);
-  };
+  const handleLevelComplete = (lives: number, maxLives: number) => {
+      // Recompensa baseada na performance
+      let starReward = 10; 
+      if (lives === maxLives) starReward = 30; // 3 estrelas
+      else if (lives >= maxLives / 2) starReward = 20; // 2 estrelas
 
-  const handleSelectLevel = (levelId: number) => {
-      setSelectedLevelId(levelId);
-      navigateTo('GAME');
+      // Bônus da fase
+      const levelBonus = selectedLevelId * 5;
+      const totalStars = starReward + levelBonus;
+      
+      setStars(prev => prev + totalStars);
+      
+      // Pequena chance de ganhar PoeiraCoin jogando
+      if (Math.random() > 0.7) setPoeiraCoins(prev => prev + 1);
+
+      return totalStars;
   };
 
   const handleNextLevel = () => {
-      if (selectedLevelId < Constants.LEVELS.length) {
-          setSelectedLevelId(prev => prev + 1);
-      } else {
-          navigateTo('SELECAO_FASES');
-      }
+    const nextLevel = selectedLevelId + 1;
+    if (nextLevel <= Constants.LEVELS.length) {
+        setSelectedLevelId(nextLevel);
+        setCurrentScene('GAME');
+    } else {
+        setCurrentScene('SELECAO_FASES');
+    }
   };
 
   const handlePurchaseUpgrade = (type: TowerType) => {
-    const currentLevel = upgradeLevels[type];
-    if (currentLevel >= 3) return false;
-    const nextLevel = (currentLevel + 1);
-    const cost = Constants.UPGRADE_COSTS[nextLevel as 2 | 3];
-    if (stars >= cost) {
-        setStars(prev => prev - cost);
-        setUpgradeLevels(prev => ({ ...prev, [type]: nextLevel }));
-        return true;
-    }
-    return false;
+      const currentLevel = upgradeLevels[type];
+      if (currentLevel >= 3) return false;
+
+      const nextLevel = (currentLevel + 1) as 2 | 3;
+      const cost = Constants.UPGRADE_COSTS[nextLevel];
+
+      if (stars >= cost) {
+          setStars(prev => prev - cost);
+          setUpgradeLevels(prev => ({ ...prev, [type]: nextLevel }));
+          return true;
+      }
+      return false;
   };
 
-  const handleStorePurchase = (id: number, cost: number, currency: 'COINS' | 'STARS', isConsumable: boolean, categoryToEquip?: StoreCategory) => {
-      if (currency === 'COINS') {
+  const handleStorePurchase = (id: number, cost: number, currency: 'COINS'|'STARS', isConsumable: boolean, categoryToEquip?: StoreCategory) => {
+      if (currency === 'STARS') {
+          if (stars >= cost) {
+              setStars(prev => prev - cost);
+              if (!isConsumable) setOwnedItems(prev => [...prev, id]);
+              return true;
+          }
+      } else {
           if (poeiraCoins >= cost) {
               setPoeiraCoins(prev => prev - cost);
               if (!isConsumable) {
                   setOwnedItems(prev => [...prev, id]);
+                  // Auto-equip if category provided
                   if (categoryToEquip) {
-                      setEquippedItems(prev => {
-                          const newState = { ...prev };
-                          if (categoryToEquip === 'SKINS') newState.SKINS = id;
-                          else if (categoryToEquip === 'EFEITOS') newState.EFEITOS = id;
-                          else if (categoryToEquip === 'EXTRAS') {
-                              if (id === 10) newState.MUSIC = id;
-                              if (id === 11) newState.BACKGROUND = id;
-                              if (id === 12) newState.CURSOR = id;
-                          }
-                          return newState;
-                      });
+                      handleEquipItem(categoryToEquip, id);
                   }
               }
-              return true;
-          }
-      } else {
-          if (stars >= cost) {
-              setStars(prev => prev - cost);
               return true;
           }
       }
@@ -171,65 +185,94 @@ const App: React.FC = () => {
   };
 
   const handleEquipItem = (category: StoreCategory, id: number) => {
-      if (!ownedItems.includes(id)) return false;
       setEquippedItems(prev => {
-          const newState = { ...prev };
-          if (category === 'SKINS') newState.SKINS = newState.SKINS === id ? null : id;
-          else if (category === 'EFEITOS') newState.EFEITOS = newState.EFEITOS === id ? null : id;
-          else if (category === 'EXTRAS') {
-              if (id === 10) newState.MUSIC = newState.MUSIC === id ? null : id;
-              if (id === 11) newState.BACKGROUND = newState.BACKGROUND === id ? null : id;
-              if (id === 12) newState.CURSOR = newState.CURSOR === id ? null : id;
+          const next = { ...prev };
+          if (category === 'SKINS') next.SKINS = id;
+          if (category === 'EFEITOS') next.EFEITOS = id;
+          if (category === 'EXTRAS') {
+              if (id === 10) next.MUSIC = id;
+              if (id === 11) next.BACKGROUND = id;
+              if (id === 12) next.CURSOR = id;
           }
-          return newState;
+          return next;
       });
       return true;
   };
 
-  const handleLevelComplete = (remainingLives: number, maxLives: number) => {
-    let reward = 10;
-    if (remainingLives === maxLives) reward += 20;
-    setPoeiraCoins(prev => prev + reward);
-    return reward; 
-  };
-
   const handleWatchAd = () => {
-    setPoeiraCoins(prev => prev + 5);
-  };
-
-  const cursorStyle = equippedItems.CURSOR === 12 
-    ? { cursor: "url('data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIzMiIgaGVpZ2h0PSIzMiIgdmlld0JveD0iMCAwIDMyIDMyIj48cGF0aCBkPSJNNCwyOCBMOCwyNCBNOCwyOCBMNCwyNCBNNiwzMiBMNiwyMCBMOCwxNiBMMjgsNCBNNiwyMCBMNCwxNiBMMjgsNCIiIHN0cm9rZT0iI2UzYTQ1MiIgc3Ryb2tlLXdpZHRoPSIyIiBmaWxsPSJub25lIi8+PC9zdmc+') 0 32, auto" } 
-    : {};
-
-  const renderScene = () => {
-    switch (currentScene) {
-      case 'MENU_PRINCIPAL': return <MainMenu onNavigate={navigateTo} />;
-      case 'GAME': return <GameScene levelId={selectedLevelId} onBackToMenu={() => navigateTo('MENU_PRINCIPAL')} upgradeLevels={upgradeLevels} equippedItems={equippedItems} onLevelComplete={handleLevelComplete} onNextLevel={handleNextLevel} />;
-      case 'SELECAO_FASES': return <LevelSelect onBack={() => navigateTo('MENU_PRINCIPAL')} onSelectLevel={handleSelectLevel} />;
-      case 'LABORATORIO': return <Lab onBack={() => navigateTo('MENU_PRINCIPAL')} stars={stars} upgradeLevels={upgradeLevels} onPurchase={handlePurchaseUpgrade} />;
-      case 'LOJA': return <Store onBack={() => navigateTo('MENU_PRINCIPAL')} poeiraCoins={poeiraCoins} stars={stars} ownedItems={ownedItems} equippedItems={equippedItems} onPurchase={handleStorePurchase} onExchangeStars={handleExchangeStars} onEquip={handleEquipItem} onWatchAd={handleWatchAd} />;
-      case 'OPCOES': return <Options onBack={() => navigateTo('MENU_PRINCIPAL')} />;
-      default: return <MainMenu onNavigate={navigateTo} />;
-    }
+      setPoeiraCoins(prev => prev + 5);
   };
 
   return (
-    <div 
-        className="w-full h-full flex justify-center items-center bg-zinc-900 text-white font-sans overflow-hidden" 
-        style={{ ...cursorStyle, width: '100vw', height: '100vh', position: 'absolute', top: 0, left: 0 }}
-    >
-      <div 
-        className="w-full h-full max-w-[1200px] max-h-[600px] aspect-video relative shadow-2xl overflow-hidden bg-slate-800 border-4 border-slate-700"
-        style={{ minWidth: '320px', minHeight: '180px' }}
-      >
-        {renderScene()}
-      </div>
+    <div className={`w-full h-full bg-slate-900 text-white ${equippedItems.CURSOR === 12 ? 'cursor-none' : ''}`}>
+      {equippedItems.CURSOR === 12 && (
+          <div className="fixed pointer-events-none z-[9999]" 
+               style={{ 
+                   left: 0, top: 0, 
+                   transform: 'translate(var(--cursor-x), var(--cursor-y))',
+                   width: '32px', height: '32px'
+               }}
+               ref={(el) => {
+                   if(el) {
+                       window.addEventListener('mousemove', (e) => {
+                           el.style.setProperty('--cursor-x', `${e.clientX}px`);
+                           el.style.setProperty('--cursor-y', `${e.clientY}px`);
+                       });
+                   }
+               }}
+          >
+              🧹
+          </div>
+      )}
+
+      {currentScene === 'MENU_PRINCIPAL' && (
+        <MainMenu onNavigate={setCurrentScene} />
+      )}
       
-      <div className="fixed top-0 left-0 w-full h-full bg-black/90 z-[100] flex flex-col items-center justify-center p-8 text-center md:hidden landscape:hidden">
-        <span className="text-4xl mb-4">📱➡️</span>
-        <h2 className="text-xl font-bold text-yellow-400">Gire seu celular</h2>
-        <p className="text-gray-300 mt-2">Este jogo foi desenhado para ser jogado na horizontal (Landscape).</p>
-      </div>
+      {currentScene === 'GAME' && (
+        <GameScene 
+            levelId={selectedLevelId} 
+            onBackToMenu={() => setCurrentScene('MENU_PRINCIPAL')}
+            upgradeLevels={upgradeLevels}
+            equippedItems={equippedItems}
+            onLevelComplete={handleLevelComplete}
+            onNextLevel={handleNextLevel}
+        />
+      )}
+
+      {currentScene === 'SELECAO_FASES' && (
+        <LevelSelect 
+            onBack={() => setCurrentScene('MENU_PRINCIPAL')} 
+            onSelectLevel={(id) => { setSelectedLevelId(id); setCurrentScene('GAME'); }}
+        />
+      )}
+
+      {currentScene === 'LABORATORIO' && (
+        <Lab 
+            onBack={() => setCurrentScene('MENU_PRINCIPAL')}
+            stars={stars}
+            upgradeLevels={upgradeLevels}
+            onPurchase={handlePurchaseUpgrade}
+        />
+      )}
+
+      {currentScene === 'LOJA' && (
+        <Store 
+            onBack={() => setCurrentScene('MENU_PRINCIPAL')}
+            poeiraCoins={poeiraCoins}
+            stars={stars}
+            ownedItems={ownedItems}
+            equippedItems={equippedItems}
+            onPurchase={handleStorePurchase}
+            onExchangeStars={handleExchangeStars}
+            onEquip={handleEquipItem}
+            onWatchAd={handleWatchAd}
+        />
+      )}
+
+      {currentScene === 'OPCOES' && (
+          <Options onBack={() => setCurrentScene('MENU_PRINCIPAL')} />
+      )}
     </div>
   );
 };

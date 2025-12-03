@@ -50,93 +50,104 @@
         margin-bottom: 20px;
       }
       @keyframes spin { to { transform: rotate(360deg); } }
-      .error-msg {
-          color: #ef4444;
-          background: rgba(0,0,0,0.8);
-          padding: 20px;
-          border-radius: 8px;
-          max-width: 80%;
-          text-align: center;
-          font-family: monospace;
-          font-size: 12px;
-      }
-      .slow-msg {
+      
+      .loading-text {
+          font-size: 14px;
+          color: #94a3b8;
           margin-top: 10px;
-          font-size: 12px;
-          color: #fbbf24;
-          opacity: 0;
-          transition: opacity 1s;
+          text-align: center;
+          font-weight: bold;
       }
+
+      /* Botão de Emergência (Force Start) */
+      #force-start-btn {
+          display: none; /* Invisível por padrão */
+          margin-top: 25px;
+          padding: 14px 28px;
+          background-color: #22c55e;
+          color: white;
+          border: none;
+          border-radius: 12px;
+          font-weight: 800;
+          font-size: 16px;
+          cursor: pointer;
+          box-shadow: 0 4px 0 #15803d;
+          animation: pulse 2s infinite;
+          text-transform: uppercase;
+          letter-spacing: 1px;
+      }
+      #force-start-btn:active {
+          transform: translateY(4px);
+          box-shadow: none;
+      }
+      @keyframes pulse { 0% { transform: scale(1); } 50% { transform: scale(1.05); } 100% { transform: scale(1); } }
     </style>
     <script>
-      // 1. Configuração Global
-      window.gameLoaded = false;
-
-      // 2. Sistema de Reporte de Erros (Reais)
-      function showError(title, detail) {
-          // Só mostra erro se o jogo ainda não carregou
-          if (window.gameLoaded) return;
+      // 1. Função Global de Liberação (Acessível pelo React)
+      window.gameIsReady = false;
+      
+      window.finishLoading = function() {
+          if (window.gameIsReady) return;
+          window.gameIsReady = true;
           
+          console.log("[BOOT] Jogo sinalizou prontidão.");
           const loader = document.getElementById('loading-overlay');
-          if(loader) {
-              loader.innerHTML = '<div class="error-msg"><h2>'+title+'</h2><p>'+detail+'</p><button onclick="window.location.reload()" style="margin-top:10px;padding:8px;background:white;color:black;border:none;cursor:pointer;">Recarregar</button></div>';
+          if (loader) {
+              loader.style.opacity = '0';
+              setTimeout(() => {
+                  loader.style.display = 'none';
+              }, 500);
           }
-      }
+      };
 
+      // 2. Listener de Erros Globais (Não trava o load, apenas loga)
       window.onerror = function(msg, url, line, col, error) {
-        // Ignora erros de ResizeObserver que são comuns e inofensivos
-        if (msg && msg.includes && msg.includes('ResizeObserver')) return false;
-        
-        console.error("GLOBAL ERROR:", msg);
-        showError("Erro Crítico", msg);
+        // Ignora erros comuns de ResizeObserver
+        if (msg && typeof msg === 'string' && msg.includes('ResizeObserver')) return false;
+        console.warn("[BOOT ERROR]", msg);
+        // Em caso de erro, força o load após breve delay para não travar o usuário
+        setTimeout(window.finishLoading, 2000); 
         return false;
       };
 
-      window.onunhandledrejection = function(event) {
-          console.error("UNHANDLED PROMISE:", event.reason);
-          // Não bloqueia a tela por promessas falhas, apenas loga, a menos que seja crítico
-          // showError("Falha no Carregamento", event.reason); 
-      };
-
-      // 3. Sistema de Polling (Verificação Contínua)
-      // Em vez de assumir erro após X segundos, verificamos se o React montou
       document.addEventListener("DOMContentLoaded", function() {
-          const loader = document.getElementById('loading-overlay');
+          console.log("[BOOT] DOM carregado. Iniciando monitoramento...");
           const root = document.getElementById('root');
-          const slowMsg = document.getElementById('slow-loading-msg');
+          const btn = document.getElementById('force-start-btn');
+          const status = document.getElementById('loading-status');
           
-          let checkInterval = setInterval(() => {
-              // Se o root tem filhos, o React montou o app com sucesso
+          // 3. Monitoramento Passivo (Polling)
+          // Verifica a cada 250ms se o React injetou algo no #root
+          const checkInterval = setInterval(() => {
               if (root && root.childElementCount > 0) {
-                  window.gameLoaded = true;
+                  console.log("[BOOT] Conteúdo detectado no #root. Liberando overlay.");
                   clearInterval(checkInterval);
-                  
-                  // Remove o loader suavemente
-                  if (loader) {
-                      loader.style.opacity = '0';
-                      setTimeout(() => {
-                          loader.style.display = 'none';
-                      }, 500);
+                  window.finishLoading();
+              }
+          }, 250);
+
+          // 4. Timer de Segurança (Mostra botão após 5 segundos)
+          setTimeout(() => {
+              if (!window.gameIsReady && document.getElementById('loading-overlay').style.display !== 'none') {
+                  console.warn("[BOOT] Carregamento lento detectado. Habilitando botão manual.");
+                  if(status) status.innerText = "O carregamento está demorando...";
+                  if(btn) {
+                      btn.style.display = 'block';
+                      btn.onclick = function() {
+                          console.log("[BOOT] Force Start clicado.");
+                          window.finishLoading();
+                      };
                   }
               }
-          }, 200); // Checa a cada 200ms
+          }, 5000);
 
-          // 4. Timeout de Aviso (Não bloqueante) - 8 segundos
+          // 5. Fallback Final (15 segundos - Remove overlay à força)
           setTimeout(() => {
-              if (!window.gameLoaded && slowMsg) {
-                  slowMsg.style.opacity = '1'; // Mostra aviso de lentidão, mas continua tentando carregar
-              }
-          }, 8000);
-
-          // 5. Timeout Limite (Fallback final) - 45 segundos
-          setTimeout(() => {
-              if (!window.gameLoaded && (!root || root.childElementCount === 0)) {
-                  clearInterval(checkInterval);
-                  // Tenta forçar a remoção mesmo assim, talvez o React tenha montado algo invisível
-                  console.warn("Timeout limite atingido. Forçando remoção do loader.");
-                  if(loader) loader.style.display = 'none';
-              }
-          }, 45000);
+             if (!window.gameIsReady && document.getElementById('loading-overlay').style.display !== 'none') {
+                 console.error("[BOOT] Timeout limite atingido. Removendo overlay forçadamente.");
+                 window.finishLoading();
+             }
+          }, 15000);
       });
     </script>
     <script type="importmap">
@@ -153,8 +164,9 @@
   <body>
     <div id="loading-overlay">
         <div class="spinner"></div>
-        <p>Carregando Jogo...</p>
-        <p id="slow-loading-msg" class="slow-msg">Conexão lenta... aguardando carregamento.</p>
+        <h2 style="font-weight:bold; font-size: 20px; margin-bottom: 5px;">Aspiradores vs Fantasmas</h2>
+        <p id="loading-status" class="loading-text">Organizando a casa...</p>
+        <button id="force-start-btn">JOGAR AGORA</button>
     </div>
     <div id="root"></div>
   </body>

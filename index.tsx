@@ -2,18 +2,6 @@ import React, { Component, ErrorInfo, ReactNode } from 'react';
 import ReactDOM from 'react-dom/client';
 import App from './App';
 
-// Função auxiliar para sinalizar ao HTML que o JS assumiu o controle
-const signalGameLoaded = () => {
-    (window as any).gameLoaded = true;
-    const loader = document.getElementById('loading-overlay');
-    if (loader) {
-        loader.style.opacity = '0';
-        setTimeout(() => {
-            loader.style.display = 'none';
-        }, 500);
-    }
-};
-
 // --- ERROR BOUNDARY ---
 interface Props {
   children: ReactNode;
@@ -36,7 +24,8 @@ class ErrorBoundary extends Component<Props, State> {
 
   componentDidCatch(error: Error, errorInfo: ErrorInfo) {
     console.error("React Error Boundary caught:", error, errorInfo);
-    signalGameLoaded(); // Remove loader para mostrar o erro
+    // Em caso de erro React, tentamos remover o loader para mostrar o erro na tela
+    if ((window as any).finishLoading) (window as any).finishLoading();
   }
 
   render() {
@@ -84,9 +73,7 @@ root.render(
   </React.StrictMode>
 );
 
-// Sinaliza carregamento imediatamente após o agendamento do render
-// O HTML também tem um polling como backup
+// Sinalização imediata pós-agendamento (Backup)
 requestAnimationFrame(() => {
-    console.log("Render agendado. Removendo loader...");
-    signalGameLoaded();
+    if ((window as any).finishLoading) (window as any).finishLoading();
 });
