@@ -16,15 +16,23 @@ export const MainMenu: React.FC<MainMenuProps> = ({ onNavigate }) => {
       isPlaying: false, nextNoteTime: 0, step: 0, timerId: null
   });
 
-  // --- Inicialização de Áudio ---
+  // --- Inicialização de Áudio Segura ---
   const initAudio = () => {
-    if (!audioCtxRef.current) {
-        audioCtxRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
+    try {
+        if (!audioCtxRef.current) {
+            const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
+            if (AudioContextClass) {
+                audioCtxRef.current = new AudioContextClass();
+            }
+        }
+        if (audioCtxRef.current && audioCtxRef.current.state === 'suspended') {
+            audioCtxRef.current.resume().catch(() => {});
+        }
+        return audioCtxRef.current;
+    } catch (e) {
+        console.warn("Audio initialization failed:", e);
+        return null;
     }
-    if (audioCtxRef.current.state === 'suspended') {
-        audioCtxRef.current.resume().catch(() => {});
-    }
-    return audioCtxRef.current;
   };
 
   // --- Lógica da Música Procedural (Tema Aconchegante) ---
@@ -38,8 +46,10 @@ export const MainMenu: React.FC<MainMenuProps> = ({ onNavigate }) => {
     // Listener para desbloquear áudio na primeira interação
     const unlockAudio = () => {
         const ctx = initAudio();
-        if (ctx.state === 'suspended') ctx.resume();
-        if (!musicRef.current.isPlaying) startMusic();
+        if (ctx) {
+            if (ctx.state === 'suspended') ctx.resume().catch(() => {});
+            if (!musicRef.current.isPlaying) startMusic();
+        }
         
         window.removeEventListener('click', unlockAudio);
         window.removeEventListener('keydown', unlockAudio);
@@ -60,10 +70,12 @@ export const MainMenu: React.FC<MainMenuProps> = ({ onNavigate }) => {
       if (!ctx) return;
       if (musicRef.current.isPlaying) return;
 
-      musicRef.current.isPlaying = true;
-      musicRef.current.step = 0;
-      musicRef.current.nextNoteTime = ctx.currentTime + 0.1;
-      scheduler();
+      try {
+          musicRef.current.isPlaying = true;
+          musicRef.current.step = 0;
+          musicRef.current.nextNoteTime = ctx.currentTime + 0.1;
+          scheduler();
+      } catch (e) { console.warn("Error starting music:", e); }
   };
 
   const stopMusic = () => {
@@ -79,17 +91,21 @@ export const MainMenu: React.FC<MainMenuProps> = ({ onNavigate }) => {
       const lookahead = 0.1; // 100ms
       const scheduleAheadTime = 0.1; 
 
-      while (musicRef.current.nextNoteTime < ctx.currentTime + scheduleAheadTime) {
-          playMusicStep(musicRef.current.step, musicRef.current.nextNoteTime);
-          // Avança passo (Semicolcheia / 16th note)
-          // Tempo: 110 BPM -> ~0.136s por 16th note
-          const secondsPerBeat = 60.0 / 110.0;
-          const secondsPer16th = secondsPerBeat / 4;
-          
-          musicRef.current.nextNoteTime += secondsPer16th;
-          musicRef.current.step = (musicRef.current.step + 1) % 64; // Loop de 4 compassos (16 steps * 4)
+      try {
+          while (musicRef.current.nextNoteTime < ctx.currentTime + scheduleAheadTime) {
+              playMusicStep(musicRef.current.step, musicRef.current.nextNoteTime);
+              // Avança passo (Semicolcheia / 16th note)
+              // Tempo: 110 BPM -> ~0.136s por 16th note
+              const secondsPerBeat = 60.0 / 110.0;
+              const secondsPer16th = secondsPerBeat / 4;
+              
+              musicRef.current.nextNoteTime += secondsPer16th;
+              musicRef.current.step = (musicRef.current.step + 1) % 64; // Loop de 4 compassos (16 steps * 4)
+          }
+          musicRef.current.timerId = window.setTimeout(scheduler, 25);
+      } catch(e) {
+          stopMusic();
       }
-      musicRef.current.timerId = window.setTimeout(scheduler, 25);
   };
 
   const playMusicStep = (step: number, time: number) => {
@@ -98,28 +114,23 @@ export const MainMenu: React.FC<MainMenuProps> = ({ onNavigate }) => {
 
       // Helper para tocar tons
       const playTone = (freq: number, type: 'sine'|'triangle'|'square'|'sawtooth', vol: number, dur: number, attack = 0.01) => {
-          const osc = ctx.createOscillator();
-          const gain = ctx.createGain();
-          osc.type = type;
-          osc.frequency.setValueAtTime(freq, time);
-          
-          osc.connect(gain);
-          gain.connect(ctx.destination);
-          
-          gain.gain.setValueAtTime(0, time);
-          gain.gain.linearRampToValueAtTime(vol, time + attack);
-          gain.gain.exponentialRampToValueAtTime(0.001, time + dur);
-          
-          osc.start(time);
-          osc.stop(time + dur + 0.1);
+          try {
+              const osc = ctx.createOscillator();
+              const gain = ctx.createGain();
+              osc.type = type;
+              osc.frequency.setValueAtTime(freq, time);
+              
+              osc.connect(gain);
+              gain.connect(ctx.destination);
+              
+              gain.gain.setValueAtTime(0, time);
+              gain.gain.linearRampToValueAtTime(vol, time + attack);
+              gain.gain.exponentialRampToValueAtTime(0.001, time + dur);
+              
+              osc.start(time);
+              osc.stop(time + dur + 0.1);
+          } catch(e) {}
       };
-
-      const playNoise = (vol: number, dur: number) => {
-          // Percussão simples (ruído filtrado) não é fácil nativamente sem buffer, 
-          // usaremos oscilador de onda quadrada baixa e curta para "kick" e alta para "hat"
-      };
-
-      // --- INSTRUMENTOS ---
 
       // 1. GLOCKENSPIEL / SINOS (Melodia Feliz) - C Major Pentatonic
       // Steps principais: 0, 4, 8, 12...
@@ -145,40 +156,33 @@ export const MainMenu: React.FC<MainMenuProps> = ({ onNavigate }) => {
       };
 
       if (melody[step]) {
-          // Glockenspiel: Sine, ataque rápido, sustain médio
           playTone(melody[step], 'sine', 0.15, 0.4);
-          // Harmônico leve
           playTone(melody[step]*2, 'sine', 0.05, 0.2); 
       }
 
-      // 2. UKULELE (Strumming/Acordes) - Backbeat
-      // Toca nos tempos fortes (0, 8, 16...)
       const strum = (rootFreq: number) => {
-          // Simula acorde maior (Raiz, 3a Maior, 5a)
           playTone(rootFreq, 'triangle', 0.05, 0.3, 0.02);
-          playTone(rootFreq * 1.2599, 'triangle', 0.05, 0.3, 0.03); // ~Major 3rd
-          playTone(rootFreq * 1.4983, 'triangle', 0.05, 0.3, 0.04); // ~5th
+          playTone(rootFreq * 1.2599, 'triangle', 0.05, 0.3, 0.03); 
+          playTone(rootFreq * 1.4983, 'triangle', 0.05, 0.3, 0.04); 
       };
 
-      if (step % 16 === 0 || step % 16 === 8) { // A cada 2 beats
-          const root = (step < 32) ? 261.63 : (step < 48 ? 349.23 : 392.00); // C ... F ... G
+      if (step % 16 === 0 || step % 16 === 8) { 
+          const root = (step < 32) ? 261.63 : (step < 48 ? 349.23 : 392.00); 
           strum(root);
       }
 
-      // 3. PERCUSSÃO SUAVE (Kick e Shaker)
-      if (step % 8 === 0) { // Kick
-         playTone(150, 'sine', 0.2, 0.1, 0.001); // Boom suave
+      if (step % 8 === 0) { 
+         playTone(150, 'sine', 0.2, 0.1, 0.001); 
       }
-      if (step % 4 === 2) { // Shaker/Hat
-         // Usando onda quadrada alta e curta como shaker
+      if (step % 4 === 2) { 
          playTone(8000, 'square', 0.02, 0.03, 0.001);
       }
   };
 
-  // --- Efeitos Sonoros de UI ---
   const playClickSound = () => {
     try {
       const ctx = initAudio();
+      if (!ctx) return;
       const t = ctx.currentTime;
       const osc = ctx.createOscillator();
       const gain = ctx.createGain();
@@ -195,13 +199,12 @@ export const MainMenu: React.FC<MainMenuProps> = ({ onNavigate }) => {
       osc.start(t);
       osc.stop(t + 0.15);
     } catch (e) {
-      console.error("Audio error", e);
+      console.warn("Audio error", e);
     }
   };
 
   const handleNavigate = (scene: SceneName) => {
     playClickSound();
-    // Pequeno delay para sentir o clique antes de trocar a cena
     setTimeout(() => {
         onNavigate(scene);
     }, 150);
@@ -214,22 +217,16 @@ export const MainMenu: React.FC<MainMenuProps> = ({ onNavigate }) => {
 
   return (
     <div className="w-full h-full relative overflow-hidden font-sans select-none flex flex-col">
-      
-      {/* 1. FUNDO: SVG Otimizado */}
       <div 
         className="absolute inset-0 z-0 bg-cover bg-center"
         style={{ backgroundImage: `url(${BG_MAIN_MENU})` }}
       >
-        {/* Vinheta para focar no centro e melhorar legibilidade */}
         <div className="absolute inset-0 bg-gradient-to-t from-black/40 via-transparent to-black/10 pointer-events-none"></div>
       </div>
 
-      {/* Camada de Conteúdo */}
-      <div className="relative z-10 w-full h-full flex flex-col items-center justify-between py-6 md:py-8" onClick={() => { if(audioCtxRef.current?.state === 'suspended') audioCtxRef.current.resume(); }}>
+      <div className="relative z-10 w-full h-full flex flex-col items-center justify-between py-6 md:py-8" onClick={() => { if(audioCtxRef.current?.state === 'suspended') audioCtxRef.current.resume().catch(() => {}); }}>
         
-        {/* 2. TÍTULO / LOGO (Área Superior) */}
         <div className="flex-1 flex flex-col items-center justify-center w-full max-w-lg mx-auto transform hover:scale-105 transition-transform duration-500 cursor-default">
-            {/* Decoração atrás do logo */}
             <div className="absolute bg-white/30 backdrop-blur-sm rounded-full w-80 h-40 -z-10 blur-xl"></div>
             
             <div className="relative">
@@ -254,13 +251,11 @@ export const MainMenu: React.FC<MainMenuProps> = ({ onNavigate }) => {
                     </span>
                 </h2>
 
-                {/* Ícones Decorativos Flutuantes */}
                 <Ghost className="absolute -right-8 -top-4 text-purple-400 w-10 h-10 animate-bounce drop-shadow-lg" style={{ animationDuration: '3s' }} />
                 <Zap className="absolute -left-6 bottom-0 text-yellow-400 w-8 h-8 animate-pulse drop-shadow-lg" />
             </div>
         </div>
 
-        {/* 3. BOTÕES PRINCIPAIS (Área Central/Inferior) */}
         <div className="flex-1 flex flex-col justify-center items-center w-full space-y-3 pb-4">
             
             <MenuButton 
@@ -327,11 +322,9 @@ export const MainMenu: React.FC<MainMenuProps> = ({ onNavigate }) => {
             </div>
         </div>
 
-        {/* Rodapé Pequeno */}
-        <div className="text-slate-500/80 font-bold text-xs">v1.1.2 (Sound On)</div>
+        <div className="text-slate-500/80 font-bold text-xs">v1.1.2</div>
       </div>
 
-      {/* Modal de Confirmação */}
       {showExitConfirm && (
         <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-fade-in">
             <div className="bg-white border-4 border-slate-700 rounded-3xl p-6 w-full max-w-xs text-center shadow-[0_10px_0_rgba(0,0,0,0.2)] transform scale-100 transition-all">
@@ -366,7 +359,6 @@ export const MainMenu: React.FC<MainMenuProps> = ({ onNavigate }) => {
   );
 };
 
-// Componente de Botão "Juicy" Personalizado
 interface MenuBtnProps {
     onClick: () => void;
     bgColor: string;
@@ -396,7 +388,6 @@ const MenuButton: React.FC<MenuBtnProps> = ({ onClick, bgColor, borderColor, ico
         `}
         style={{ animation: `popIn 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275) backwards ${delay}` }}
     >
-        {/* Ícone */}
         <div className={`
             absolute left-4 
             ${small ? 'relative left-0 mr-2' : ''}
@@ -405,7 +396,6 @@ const MenuButton: React.FC<MenuBtnProps> = ({ onClick, bgColor, borderColor, ico
             {icon}
         </div>
         
-        {/* Texto */}
         <div className={`flex flex-col items-start ${small ? 'items-center' : 'pl-8'}`}>
             <span className={`font-black tracking-wide drop-shadow-md leading-none ${main ? 'text-2xl md:text-3xl' : 'text-lg md:text-xl'}`}>
                 {label}
@@ -417,7 +407,6 @@ const MenuButton: React.FC<MenuBtnProps> = ({ onClick, bgColor, borderColor, ico
             )}
         </div>
 
-        {/* Shine Effect (Brilho no topo) */}
         <div className="absolute top-0 right-0 left-0 h-[40%] bg-gradient-to-b from-white/20 to-transparent rounded-t-2xl md:rounded-t-3xl pointer-events-none"></div>
     </button>
 );
