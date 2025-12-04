@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useLayoutEffect } from 'react';
 import { GameScene } from './components/GameScene';
 import { MainMenu } from './components/MainMenu';
@@ -26,6 +27,7 @@ const App: React.FC = () => {
   const [poeiraCoins, setPoeiraCoins] = useState<number>(() => safeIntInit('avf_poeiracoins', 0));
   const [ownedItems, setOwnedItems] = useState<number[]>(() => safeJsonInit('avf_owned_items', []));
   const [upgradeLevels, setUpgradeLevels] = useState<UpgradeState>(() => safeJsonInit('avf_upgrades', { BASIC: 1, TURBO: 1, ROBOT: 1, ENERGY: 1, MEGA: 1 }));
+  const [maxUnlockedLevel, setMaxUnlockedLevel] = useState<number>(() => safeIntInit('avf_max_level', 1));
   
   const [equippedItems, setEquippedItems] = useState<EquippedItems>(() => {
     try {
@@ -63,6 +65,7 @@ const App: React.FC = () => {
   useEffect(() => { safeSetItem('avf_owned_items', JSON.stringify(ownedItems)); }, [ownedItems]);
   useEffect(() => { safeSetItem('avf_equipped_items', JSON.stringify(equippedItems)); }, [equippedItems]);
   useEffect(() => { safeSetItem('avf_upgrades', JSON.stringify(upgradeLevels)); }, [upgradeLevels]);
+  useEffect(() => { safeSetItem('avf_max_level', maxUnlockedLevel.toString()); }, [maxUnlockedLevel]);
 
   // Integridade do Equipamento
   useEffect(() => {
@@ -88,6 +91,12 @@ const App: React.FC = () => {
       const totalStars = starReward + levelBonus;
       setStars(prev => prev + totalStars);
       if (Math.random() > 0.7) setPoeiraCoins(prev => prev + 1);
+
+      // Desbloquear próximo nível se venceu o nível atual e ele for o último desbloqueado
+      if (selectedLevelId === maxUnlockedLevel && maxUnlockedLevel < Constants.LEVELS.length) {
+        setMaxUnlockedLevel(prev => prev + 1);
+      }
+
       return totalStars;
   };
 
@@ -97,6 +106,7 @@ const App: React.FC = () => {
         setSelectedLevelId(nextLevel);
         setCurrentScene('GAME');
     } else {
+        // Se já venceu a última fase, volta para seleção de fases
         setCurrentScene('SELECAO_FASES');
     }
   };
@@ -202,6 +212,7 @@ const App: React.FC = () => {
         <LevelSelect 
             onBack={() => setCurrentScene('MENU_PRINCIPAL')} 
             onSelectLevel={(id) => { setSelectedLevelId(id); setCurrentScene('GAME'); }}
+            maxUnlockedLevel={maxUnlockedLevel}
         />
       )}
 

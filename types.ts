@@ -82,4 +82,5 @@ export interface LevelConfig {
   allowedGhosts: GhostType[]; // Quais tipos aparecem nesta fase
   hpMultiplier: number;      // Multiplicador de vida dos inimigos
   speedMultiplier: number;   // Multiplicador de velocidade
+  initialEnergy: number;     // Energia inicial específica da fase
 }
