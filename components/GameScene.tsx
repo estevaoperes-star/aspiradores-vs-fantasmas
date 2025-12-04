@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Zap, Heart, Pause, ArrowLeft, Trash2, Play, ChevronRight, Home, RotateCcw, Skull, Ghost, RefreshCw, Star, AlertCircle, CheckCircle, Lightbulb } from 'lucide-react';
 import { GameStatus, Ghost as GhostType, Tower, Projectile, Particle, TowerType, UpgradeState, EquippedItems } from '../types';
@@ -13,34 +12,44 @@ interface GameSceneProps {
     onNextLevel: () => void;
 }
 
+// --- CONFIGURAÇÃO DE ANIMAÇÕES ---
+const HUD_TRANSITION = "transition-all duration-500 cubic-bezier(0.34, 1.56, 0.64, 1)"; // Curva elástica suave
+
 // --- SUB-COMPONENTS DE UI ---
 
 const NotificationToast = ({ message, type }: { message: string, type: 'info' | 'warning' | 'success' }) => {
+    const [visible, setVisible] = useState(false);
+
+    useEffect(() => {
+        // Trigger enter animation
+        requestAnimationFrame(() => setVisible(true));
+        // Exit animation triggers before unmount handled by parent logic, 
+        // but here we just ensure entry is smooth.
+    }, []);
+
     const colors = {
-        info: 'bg-blue-600/90 text-white',
-        warning: 'bg-red-500/90 text-white',
-        success: 'bg-green-500/90 text-white'
+        info: 'bg-blue-600/90 text-white border-blue-400/50',
+        warning: 'bg-red-500/90 text-white border-red-400/50',
+        success: 'bg-green-500/90 text-white border-green-400/50'
     };
+
     return (
-        <div className={`fixed top-[15%] left-1/2 -translate-x-1/2 z-[60] px-6 py-3 rounded-full backdrop-blur-md shadow-lg animate-fade-in flex items-center gap-3 ${colors[type]}`}>
-            {type === 'warning' && <AlertCircle size={20} />}
-            {type === 'success' && <CheckCircle size={20} />}
-            {type === 'info' && <div className="w-2 h-2 bg-white rounded-full animate-pulse"></div>}
+        <div className={`fixed top-[18%] left-1/2 -translate-x-1/2 z-[70] px-6 py-3 rounded-full backdrop-blur-md shadow-xl border-t border-white/20 flex items-center gap-3 ${colors[type]} transition-all duration-300 ease-out ${visible ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4'}`}>
+            {type === 'warning' && <AlertCircle size={20} className="animate-pulse"/>}
+            {type === 'success' && <CheckCircle size={20} className="animate-bounce-short"/>}
+            {type === 'info' && <div className="w-2 h-2 bg-white rounded-full animate-ping"></div>}
             <span className="font-bold tracking-wide text-sm md:text-base shadow-sm">{message}</span>
         </div>
     );
 };
 
-// --- MODAL DE VITÓRIA PREMIUM ---
+// --- MODAL DE VITÓRIA ---
 const VictoryModal = ({ lives, maxLives, earnedStars, onNext, onMenu, onReplay, levelId, isLastLevel }: any) => {
     const [displayStars, setDisplayStars] = useState(0);
     
     useEffect(() => {
         let start = 0;
-        const duration = 1000;
-        const stepTime = 20;
-        const steps = duration / stepTime;
-        const increment = earnedStars / steps;
+        const increment = earnedStars / 50;
         const timer = setInterval(() => {
             start += increment;
             if (start >= earnedStars) {
@@ -49,7 +58,7 @@ const VictoryModal = ({ lives, maxLives, earnedStars, onNext, onMenu, onReplay, 
             } else {
                 setDisplayStars(Math.floor(start));
             }
-        }, stepTime);
+        }, 20);
         return () => clearInterval(timer);
     }, [earnedStars]);
 
@@ -68,8 +77,8 @@ const VictoryModal = ({ lives, maxLives, earnedStars, onNext, onMenu, onReplay, 
                         <Star 
                             key={i}
                             size={56} 
-                            weight="fill"
                             className={`transform transition-all duration-500 ${i <= starsCount ? 'text-yellow-400 fill-yellow-400 drop-shadow-md scale-100' : 'text-slate-200 fill-slate-200 scale-90'}`} 
+                            style={{ transitionDelay: `${i * 150}ms` }}
                         />
                     ))}
                 </div>
@@ -104,7 +113,7 @@ const VictoryModal = ({ lives, maxLives, earnedStars, onNext, onMenu, onReplay, 
     );
 };
 
-// --- MODAL DE DERROTA PREMIUM ---
+// --- MODAL DE DERROTA ---
 const DefeatModal = ({ onRetry, onMenu }: any) => {
     const tips = [
         "Robôs bloqueiam o caminho dos fantasmas.",
@@ -150,7 +159,7 @@ export const GameScene: React.FC<GameSceneProps> = ({ levelId, onBackToMenu, upg
   // --- Game Config ---
   const levelConfig = Constants.LEVELS.find(l => l.id === levelId) || Constants.LEVELS[0];
 
-  // --- Game State (UI) ---
+  // --- Game State ---
   const [status, setStatus] = useState<GameStatus>('PLAYING');
   const [energy, setEnergy] = useState(levelConfig.initialEnergy);
   const [lives, setLives] = useState(Constants.INITIAL_LIVES);
@@ -161,6 +170,12 @@ export const GameScene: React.FC<GameSceneProps> = ({ levelId, onBackToMenu, upg
   const [isPaused, setIsPaused] = useState(false);
   const [earnedStars, setEarnedStars] = useState(0);
   
+  // --- Animation States ---
+  const [energyBump, setEnergyBump] = useState(false);
+  const [livesShake, setLivesShake] = useState(false);
+  const prevEnergy = useRef(energy);
+  const prevLives = useRef(lives);
+
   // --- Logic Refs ---
   const ghostsSpawnedRef = useRef(0);
   const ghostsDefeatedRef = useRef(0);
@@ -182,9 +197,13 @@ export const GameScene: React.FC<GameSceneProps> = ({ levelId, onBackToMenu, upg
       isPlaying: false, nextNoteTime: 0, step: 0, timerId: null
   });
 
+  // Determines if HUD should be visible based on game state
+  const isHudVisible = status === 'PLAYING' && !isPaused;
+
   useEffect(() => {
     startGame();
-    showNotification(`Fase ${levelId} Iniciada!`, 'info');
+    // Delay notification slightly for smooth entry
+    setTimeout(() => showNotification(`Fase ${levelId} Iniciada!`, 'info'), 500);
     return () => {
         cancelAnimationFrame(requestRef.current);
         stopMusic();
@@ -198,6 +217,23 @@ export const GameScene: React.FC<GameSceneProps> = ({ levelId, onBackToMenu, upg
           stopMusic();
       }
   }, [status, isPaused]);
+
+  // --- MICRO-INTERACTIONS ---
+  useEffect(() => {
+    if (energy > prevEnergy.current) {
+        setEnergyBump(true);
+        setTimeout(() => setEnergyBump(false), 120);
+    }
+    prevEnergy.current = energy;
+  }, [energy]);
+
+  useEffect(() => {
+    if (lives < prevLives.current) {
+        setLivesShake(true);
+        setTimeout(() => setLivesShake(false), 300);
+    }
+    prevLives.current = lives;
+  }, [lives]);
 
   const showNotification = (msg: string, type: 'info'|'warning'|'success' = 'info') => {
       setNotification({ msg, type });
@@ -481,35 +517,35 @@ export const GameScene: React.FC<GameSceneProps> = ({ levelId, onBackToMenu, upg
   };
 
   return (
-    <div className="w-full h-full flex flex-col relative select-none font-sans overflow-hidden bg-slate-900" onClick={() => initAudio()}>
+    <div className="w-full h-full relative select-none font-sans overflow-hidden bg-slate-900" onClick={() => initAudio()}>
       
-      {/* --- 1. TOP HUD (Fixed) --- */}
-      <header className="flex-none h-20 md:h-24 bg-white/10 backdrop-blur-xl border-b border-white/10 flex items-center justify-between px-4 md:px-8 z-30 shrink-0">
+      {/* --- 1. TOP HUD (Fixed & Animated) --- */}
+      <header className={`fixed top-0 left-0 right-0 z-40 h-20 md:h-24 bg-white/10 backdrop-blur-xl border-b border-white/10 flex items-center justify-between px-4 md:px-8 shadow-lg ${HUD_TRANSITION} transform ${isHudVisible ? 'translate-y-0 opacity-100' : '-translate-y-24 opacity-0 pointer-events-none'}`}>
           
           {/* Left Stats */}
           <div className="flex gap-4 md:gap-6 items-center">
               {/* Energy */}
               <div className="flex flex-col md:flex-row md:items-center">
-                  <div className="flex items-center gap-2">
+                  <div className={`flex items-center gap-2 transform transition-transform duration-150 ${energyBump ? 'scale-110' : 'scale-100'}`}>
                       <div className={`p-2 rounded-xl shadow-lg transition-colors ${energy >= 50 ? 'bg-green-500' : (energy >= 25 ? 'bg-yellow-500' : 'bg-red-500')}`}>
                           <Zap size={20} className="text-white fill-white" />
                       </div>
                       <div>
                           <span className="block text-[10px] md:text-xs font-bold text-slate-400 uppercase tracking-widest leading-none">Energia</span>
-                          <span className="block text-xl md:text-2xl font-black text-white leading-none">{Math.floor(energy)}</span>
+                          <span className="block text-xl md:text-2xl font-black text-white leading-none tabular-nums">{Math.floor(energy)}</span>
                       </div>
                   </div>
               </div>
 
               {/* Lives */}
               <div className="flex flex-col md:flex-row md:items-center">
-                  <div className="flex items-center gap-2">
-                      <div className="p-2 bg-rose-500 rounded-xl shadow-lg">
+                  <div className={`flex items-center gap-2 transform transition-transform duration-150 ${livesShake ? 'translate-x-1 rotate-6' : 'translate-x-0'}`}>
+                      <div className={`p-2 bg-rose-500 rounded-xl shadow-lg ${livesShake ? 'animate-shake' : ''}`}>
                            <Heart size={20} className="text-white fill-white" />
                       </div>
                       <div>
                            <span className="block text-[10px] md:text-xs font-bold text-slate-400 uppercase tracking-widest leading-none">Vidas</span>
-                           <span className="block text-xl md:text-2xl font-black text-white leading-none">{lives}</span>
+                           <span className={`block text-xl md:text-2xl font-black text-white leading-none tabular-nums ${livesShake ? 'text-red-400' : ''}`}>{lives}</span>
                       </div>
                   </div>
               </div>
@@ -517,23 +553,23 @@ export const GameScene: React.FC<GameSceneProps> = ({ levelId, onBackToMenu, upg
 
           {/* Center Info */}
           <div className="absolute left-1/2 -translate-x-1/2 flex flex-col items-center top-3 md:top-4">
-               <div className="bg-slate-900/50 px-4 py-1 rounded-full border border-white/10 backdrop-blur-sm mb-1">
+               <div className="bg-slate-900/50 px-4 py-1 rounded-full border border-white/10 backdrop-blur-sm mb-1 shadow-md">
                    <span className="text-xs md:text-sm font-black text-blue-300 uppercase tracking-widest">Onda {calculateWave()}</span>
                </div>
-               <span className="text-sm md:text-base font-bold text-slate-300">{uiGhostsDefeated} <span className="opacity-50">/</span> {levelConfig.totalGhosts}</span>
+               <span className="text-sm md:text-base font-bold text-slate-300 drop-shadow-md">{uiGhostsDefeated} <span className="opacity-50">/</span> {levelConfig.totalGhosts}</span>
           </div>
 
           {/* Right Pause */}
           <button 
               onClick={() => { setIsPaused(!isPaused); playSound('SELECT'); }}
-              className="w-12 h-12 md:w-14 md:h-14 bg-slate-800 hover:bg-slate-700 rounded-2xl border-2 border-slate-600 flex items-center justify-center transition-all active:scale-95 shadow-lg"
+              className={`w-12 h-12 md:w-14 md:h-14 bg-slate-800 hover:bg-slate-700 rounded-2xl border-2 border-slate-600 flex items-center justify-center transition-all shadow-lg hover:scale-105 active:scale-90 duration-200`}
           >
-              {isPaused ? <Play size={24} className="text-green-400 fill-current" /> : <Pause size={24} className="text-white fill-white" />}
+              <Pause size={24} className="text-white fill-white" />
           </button>
       </header>
 
-      {/* --- 2. GAME AREA (Middle - Flex-1) --- */}
-      <main className="flex-1 relative w-full overflow-hidden z-10" style={getBackgroundStyle()}>
+      {/* --- 2. GAME AREA (Full Screen with padding for HUD) --- */}
+      <main className="absolute inset-0 w-full h-full overflow-hidden z-10 pt-20 pb-24 md:pt-24 md:pb-32 transition-all duration-300" style={getBackgroundStyle()}>
           {/* NOTIFICATIONS INSIDE GAME AREA */}
           {notification && <NotificationToast message={notification.msg} type={notification.type} />}
 
@@ -591,8 +627,8 @@ export const GameScene: React.FC<GameSceneProps> = ({ levelId, onBackToMenu, upg
           </div>
       </main>
 
-      {/* --- 3. BOTTOM HUD (Fixed) --- */}
-      <footer className="flex-none h-24 md:h-32 bg-white/10 backdrop-blur-xl border-t border-white/10 flex items-center justify-center z-30 shrink-0 pb-2 px-4">
+      {/* --- 3. BOTTOM HUD (Fixed & Animated) --- */}
+      <footer className={`fixed bottom-0 left-0 right-0 z-40 h-24 md:h-32 bg-white/10 backdrop-blur-xl border-t border-white/10 flex items-center justify-center pb-2 px-4 shadow-[0_-5px_20px_rgba(0,0,0,0.2)] ${HUD_TRANSITION} transform ${isHudVisible ? 'translate-y-0 opacity-100' : 'translate-y-32 opacity-0 pointer-events-none'}`}>
          <div className="flex gap-2 md:gap-6 items-center w-full max-w-4xl justify-center overflow-x-auto no-scrollbar py-2">
             {(Object.keys(Constants.TOWER_TYPES) as TowerType[]).map((type) => {
                 const conf = Constants.TOWER_TYPES[type];
@@ -603,18 +639,18 @@ export const GameScene: React.FC<GameSceneProps> = ({ levelId, onBackToMenu, upg
                         key={type} 
                         onClick={() => { setSelectedTowerType(type); setIsRemoving(false); playSound('SELECT'); }}
                         className={`
-                            relative group w-16 h-16 md:w-24 md:h-24 rounded-2xl md:rounded-3xl transition-all duration-200 flex flex-col items-center justify-center shrink-0
+                            relative group w-16 h-16 md:w-24 md:h-24 rounded-2xl md:rounded-3xl transition-all duration-300 flex flex-col items-center justify-center shrink-0
                             ${isSelected 
-                                ? 'bg-white shadow-[0_0_20px_rgba(255,255,255,0.3)] scale-110 z-10' 
-                                : (canAfford ? 'bg-slate-800/80 hover:bg-slate-700 hover:scale-105' : 'bg-slate-900/50 opacity-50 grayscale')
+                                ? 'bg-white shadow-[0_0_20px_rgba(255,255,255,0.4)] scale-110 z-10 -translate-y-2' 
+                                : (canAfford ? 'bg-slate-800/80 hover:bg-slate-700 hover:-translate-y-1' : 'bg-slate-900/50 opacity-50 grayscale')
                             }
                         `}
                     >
-                        <div className={`absolute -top-2 -right-2 w-6 h-6 md:w-8 md:h-8 rounded-full flex items-center justify-center text-[10px] md:text-xs font-black border-2 z-20 ${canAfford ? 'bg-yellow-400 text-slate-900 border-white' : 'bg-red-500 text-white border-red-700'}`}>
+                        <div className={`absolute -top-2 -right-2 w-6 h-6 md:w-8 md:h-8 rounded-full flex items-center justify-center text-[10px] md:text-xs font-black border-2 z-20 transition-transform ${canAfford ? 'bg-yellow-400 text-slate-900 border-white scale-100' : 'bg-red-500 text-white border-red-700 scale-90'}`}>
                             {conf.cost}
                         </div>
                         <div className="w-10 h-10 md:w-16 md:h-16 flex items-center justify-center">
-                             <img src={conf.image} className={`w-full h-full object-contain drop-shadow-xl ${isSelected ? 'animate-bounce-short' : ''}`} />
+                             <img src={conf.image} className={`w-full h-full object-contain drop-shadow-xl transition-transform duration-300 ${isSelected ? 'scale-110' : ''}`} />
                         </div>
                     </button>
                 )
@@ -624,7 +660,7 @@ export const GameScene: React.FC<GameSceneProps> = ({ levelId, onBackToMenu, upg
             
             <button 
                 onClick={() => { setIsRemoving(!isRemoving); playSound('SELECT'); }}
-                className={`w-16 h-16 md:w-24 md:h-24 rounded-2xl md:rounded-3xl flex flex-col items-center justify-center transition-all shrink-0 ${isRemoving ? 'bg-red-500 text-white shadow-lg scale-110' : 'bg-slate-800/80 text-red-400 hover:bg-slate-700'}`}
+                className={`w-16 h-16 md:w-24 md:h-24 rounded-2xl md:rounded-3xl flex flex-col items-center justify-center transition-all duration-300 shrink-0 ${isRemoving ? 'bg-red-500 text-white shadow-lg scale-110 -translate-y-2' : 'bg-slate-800/80 text-red-400 hover:bg-slate-700 hover:-translate-y-1'}`}
             >
                 <Trash2 size={24} className="md:w-8 md:h-8" strokeWidth={3} />
                 <span className="text-[9px] md:text-[10px] font-black mt-1 uppercase">Vender</span>
@@ -635,7 +671,7 @@ export const GameScene: React.FC<GameSceneProps> = ({ levelId, onBackToMenu, upg
       {/* --- MODALS (Overlays) --- */}
       {isPaused && status === 'PLAYING' && (
           <div className="absolute inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center animate-fade-in p-4">
-              <div className="bg-white rounded-3xl border-4 border-slate-200 p-8 w-full max-w-sm text-center shadow-2xl">
+              <div className="bg-white rounded-3xl border-4 border-slate-200 p-8 w-full max-w-sm text-center shadow-2xl transform scale-100 transition-transform duration-300 ease-out">
                   <div className="w-20 h-20 bg-orange-100 rounded-full flex items-center justify-center mx-auto mb-4 border-4 border-orange-200">
                       <Pause size={40} className="text-orange-500 fill-orange-500" />
                   </div>
