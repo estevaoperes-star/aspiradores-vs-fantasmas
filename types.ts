@@ -36,6 +36,11 @@ export interface Ghost {
   hp: number;
   maxHp: number;
   isFrozen?: boolean;
+  
+  // Animation States
+  status: 'ALIVE' | 'DYING' | 'LEAKING'; 
+  animTimer: number; // Tempo decorrido no estado atual (ms)
+  lastHitTime: number; // Timestamp do último dano (para efeito de flash)
 }
 
 export interface Tower {
